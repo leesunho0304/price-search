@@ -262,7 +262,20 @@ def parse_sheet(values, title, exceptions=None):
             manage = "유통기한관리" if expiry else "비관리대상"
 
         exception_mode = get_exception_mode(product, exceptions)
-        if exception_mode == "manufacture":
+        # 예외상품 설정 적용
+        override_expiry = ""
+        if exception_mode:
+            for key in sorted(exceptions.keys(), key=len, reverse=True):
+                if clean_text(key) and clean_text(key) in product:
+                    override_expiry = clean_text(exceptions.get(key, {}).get("expiryDate", ""))
+                    break
+
+        if override_expiry:
+            expiry = override_expiry
+            days, sec = section_by_expiry(expiry)
+            manage = "유통기한관리"
+            exception_mode = "expiry_override"
+        elif exception_mode == "manufacture":
             manage = "기한확인필요"
             sec = "기한확인필요"
             days = ""
@@ -421,6 +434,36 @@ def set_exception(product, mode):
         pass
 
     return jsonify({"ok": True, "product": product, "mode": mode})
+
+
+
+@app.route("/set_expiry/<path:product>/<expiry_date>")
+def set_expiry(product, expiry_date):
+    product = clean_text(product)
+    expiry_date = clean_text(expiry_date)
+
+    if not product:
+        return jsonify({"ok": False, "message": "상품명이 없습니다."})
+
+    try:
+        datetime.strptime(expiry_date, "%Y-%m-%d")
+    except Exception:
+        return jsonify({"ok": False, "message": "유통기한 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다."})
+
+    data = load_exceptions()
+    data[product] = {
+        "mode": "expiry",
+        "expiryDate": expiry_date,
+        "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save_exceptions(data)
+
+    try:
+        sync_data()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "product": product, "expiryDate": expiry_date})
 
 
 @app.route("/health")
