@@ -611,6 +611,60 @@ def status():
     })
 
 
+
+@app.route("/set_store_item_expiry/<path:item_key>/<store_name>/<expiry_date>")
+def set_store_item_expiry(item_key, store_name, expiry_date):
+    item_key = clean_text(item_key)
+    store_name = clean_text(store_name)
+    expiry_date = clean_text(expiry_date)
+
+    if not item_key:
+        return jsonify({"ok": False, "message": "item_key가 없습니다."})
+    if not store_name:
+        return jsonify({"ok": False, "message": "매장명이 없습니다."})
+
+    try:
+        datetime.strptime(expiry_date, "%Y-%m-%d")
+    except Exception:
+        return jsonify({"ok": False, "message": "유통기한 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다."})
+
+    # 같은 원본 행이라도 매장별로 다른 유통기한을 저장할 수 있게 매장명을 앞에 붙임
+    store_item_key = f"STORE|{store_name}|{item_key}"
+
+    data = load_exceptions()
+    existing = data.get(store_item_key, {})
+    data[store_item_key] = {
+        **existing,
+        "mode": "expiry",
+        "expiryDate": expiry_date,
+        "scope": "store_item",
+        "store": store_name,
+        "baseItemKey": item_key,
+        "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save_exceptions(data)
+
+    try:
+        sync_data()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "itemKey": store_item_key, "store": store_name, "expiryDate": expiry_date})
+
+
+@app.route("/store_overrides/<store_name>")
+def get_store_overrides(store_name):
+    store_name = clean_text(store_name)
+    data = load_exceptions()
+    prefix = f"STORE|{store_name}|"
+    result = {}
+    for key, value in data.items():
+        if key.startswith(prefix):
+            base_key = key[len(prefix):]
+            result[base_key] = value
+    return jsonify({"ok": True, "store": store_name, "overrides": result})
+
+
 @app.route("/health")
 def health():
     return "ok"
