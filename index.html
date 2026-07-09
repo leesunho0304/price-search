@@ -65,7 +65,7 @@ button:disabled{opacity:.55}
 .badges{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
 .badge{display:inline-flex;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:900;background:#eff6ff;color:#1d4ed8}
 .price{background:#fee2e2;color:#b91c1c}.good{background:#dcfce7;color:#166534}.warn{background:#fef3c7;color:#92400e}.risk{background:#fee2e2;color:#b91c1c}.gray{background:#f3f4f6;color:#374151}
-.meta{font-size:13px;color:#4b5563;line-height:1.65}
+.meta{font-size:13px;color:#4b5563;line-height:1.65}.exceptionBtns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:10px}.exceptionBtns button{min-height:38px;border-radius:12px;font-size:12px;padding:0 6px}.btnManu{background:#f59e0b}.btnExclude{background:#6b7280}.btnExpiry{background:#2563eb}
 .metaGrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 8px}
 .empty{background:#fff;border:1px dashed #d1d5db;border-radius:18px;padding:22px;color:#6b7280;line-height:1.7}
 .highlight{background:#fff3a3;border-radius:4px}
@@ -246,7 +246,7 @@ function render(rows,q,boxNo,start,end){
         <span class="badge">${escapeHtml(item.type||"형태없음")}</span>
         <span class="badge price">${escapeHtml(priceText)}</span>
         <span class="badge ${badgeClass(item)}">${escapeHtml(item.manage||"")}</span>
-        ${item.section?`<span class="badge ${badgeClass(item)}">${escapeHtml(item.section)}</span>`:""}
+        ${item.section?`<span class="badge ${badgeClass(item)}">${escapeHtml(item.section)}</span>`:""}${item.exceptionMode?`<span class="badge warn">예외:${escapeHtml(item.exceptionMode)}</span>`:""}
       </div>
       <div class="meta metaGrid">
         <div>입고일: <b>${escapeHtml(item.inboundDate||"-")}</b></div>
@@ -259,6 +259,21 @@ function render(rows,q,boxNo,start,end){
     </div>`;
   }).join("");
 }
+
+async function setException(productEncoded, mode){
+  const label = mode==="manufacture" ? "제조일 상품" : (mode==="exclude" ? "기한관리 제외" : "유통기한 상품");
+  if(!confirm(`이 상품을 [${label}]으로 설정할까요?`)) return;
+  try{
+    const r = await fetch(`/set_exception/${productEncoded}/${mode}?ts=`+Date.now());
+    const res = await r.json();
+    if(!res.ok){ alert("설정 실패: "+res.message); return; }
+    alert("설정 저장 완료");
+    await loadData();
+  }catch(e){
+    alert("설정 실패: "+e);
+  }
+}
+
 async function loadData(){
   try{
     const r=await fetch("search_data.json?ts="+Date.now());

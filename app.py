@@ -10,6 +10,7 @@ PRICE_SPREADSHEET_ID = "1l1qub-I2zuLKLDP2RJFGiDNTIBuGEAxI7PTxIDmfYi4"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 DATA_FILE = "search_data.json"
+EXCEPTION_FILE = "exceptions.json"
 VALID_CATEGORIES = ["식품", "뷰티", "생활", "의류", "패션", "잡화", "신발", "도서", "아동", "가전", "미분류"]
 
 app = Flask(__name__, static_folder=".")
@@ -163,8 +164,37 @@ def section_by_expiry(expiry):
     return days, sec
 
 
-def parse_sheet(values, title):
+
+def load_exceptions():
+    path = Path(EXCEPTION_FILE)
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_exceptions(data):
+    with open(EXCEPTION_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def get_exception_mode(product_name, exceptions):
+    name = clean_text(product_name)
+    if not name:
+        return ""
+    for key in sorted(exceptions.keys(), key=len, reverse=True):
+        key_clean = clean_text(key)
+        if key_clean and key_clean in name:
+            return exceptions.get(key, {}).get("mode", "")
+    return ""
+
+
+def parse_sheet(values, title, exceptions=None):
     y = sheet_year(title)
+    exceptions = exceptions or {}
     rows = []
     current_inbound = ""
     headers = None
@@ -231,7 +261,19 @@ def parse_sheet(values, title):
         else:
             manage = "유통기한관리" if expiry else "비관리대상"
 
-        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {expiry} {note} {barcode} {box_no} {store} {item_type}".lower()
+        exception_mode = get_exception_mode(product, exceptions)
+        if exception_mode == "manufacture":
+            manage = "기한확인필요"
+            sec = "기한확인필요"
+            days = ""
+        elif exception_mode == "exclude":
+            manage = "비관리대상"
+            sec = "기한관리제외"
+            days = ""
+        elif exception_mode == "expiry":
+            pass
+
+        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {expiry} {note} {barcode} {box_no} {store} {item_type} {exception_mode}".lower()
 
         rows.append({
             "manage": manage,
@@ -252,6 +294,7 @@ def parse_sheet(values, title):
             "sheet": title,
             "row": r_idx,
             "search": search,
+            "exceptionMode": exception_mode,
         })
 
     return rows
@@ -284,6 +327,7 @@ def sync_data():
     all_rows = []
     loaded = []
     failed = []
+    exceptions = load_exceptions()
 
     for ws in spreadsheet.worksheets():
         title = ws.title
@@ -291,7 +335,7 @@ def sync_data():
             continue
 
         try:
-            parsed = parse_sheet(ws.get_all_values(), title)
+            parsed = parse_sheet(ws.get_all_values(), title, exceptions)
             if parsed:
                 all_rows.extend(parsed)
                 loaded.append(title)
@@ -344,6 +388,39 @@ def sync():
         })
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)})
+
+
+
+@app.route("/exceptions")
+def get_exceptions():
+    return jsonify(load_exceptions())
+
+
+@app.route("/set_exception/<path:product>/<mode>")
+def set_exception(product, mode):
+    if mode not in ["manufacture", "exclude", "expiry", "clear"]:
+        return jsonify({"ok": False, "message": "잘못된 mode입니다."})
+
+    product = clean_text(product)
+    if not product:
+        return jsonify({"ok": False, "message": "상품명이 없습니다."})
+
+    data = load_exceptions()
+    if mode == "clear":
+        data.pop(product, None)
+    else:
+        data[product] = {
+            "mode": mode,
+            "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    save_exceptions(data)
+
+    try:
+        sync_data()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "product": product, "mode": mode})
 
 
 @app.route("/health")
