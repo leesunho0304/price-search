@@ -5,42 +5,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111827">
-<title>가격검색 · 박스검수</title>
+<title>가격검색</title>
 <style>
 :root{
   --bg:#f3f4f6;--card:#fff;--line:#e5e7eb;--text:#111827;--muted:#6b7280;
   --blue:#2563eb;--red:#dc2626;--green:#16a34a;--amber:#d97706;--dark:#111827;--teal:#0f766e;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;background:var(--bg);font-family:Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:var(--text);padding-bottom:74px}
-.top{position:relative;background:var(--bg);padding:8px 8px 6px;border-bottom:1px solid var(--line)}
-.wrap{max-width:820px;margin:0 auto}
-.headerRow{position:sticky;top:0;z-index:30;background:rgba(243,244,246,.98);backdrop-filter:blur(10px);display:grid;grid-template-columns:1fr 112px auto;align-items:center;gap:6px;margin:-8px -8px 8px;padding:8px;border-bottom:1px solid var(--line)}
-h1{font-size:22px;margin:0;font-weight:900}
-.status{font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:8px;word-break:keep-all}
-button{border:0;border-radius:16px;padding:0 12px;background:var(--dark);color:#fff;font-weight:900;font-size:14px;min-height:46px;cursor:pointer}
-button:disabled{opacity:.55}#storeSelect{height:36px;border:1px solid #d1d5db;border-radius:999px;background:#fff;font-size:12px;padding:0 8px;min-width:0;width:112px}
-#syncBtn{background:var(--teal);min-height:38px;border-radius:999px;font-size:12px;padding:0 10px}
-.modeRow{display:none}
-.modeBtn{background:#fff;color:#111827;border:1px solid var(--line);font-size:14px;min-height:42px}
-.modeBtn.active{background:#111827;color:#fff;border-color:#111827}
-.searchRow{display:grid;grid-template-columns:1fr 76px;gap:7px;margin-bottom:7px}
+body{
+  margin:0;background:var(--bg);font-family:Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  color:var(--text);padding-bottom:116px;
+}
+.header{
+  position:sticky;top:0;z-index:30;background:rgba(243,244,246,.98);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);padding:8px 10px;
+}
+.headerInner{
+  max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 112px;gap:8px;align-items:center;
+}
+h1{font-size:20px;margin:0;font-weight:900;white-space:nowrap}
+#storeSelect{
+  height:36px;border:1px solid #d1d5db;border-radius:999px;background:#fff;font-size:12px;padding:0 8px;width:112px;
+}
+.container{max-width:820px;margin:0 auto;padding:10px}
+.status{font-size:12px;color:var(--muted);line-height:1.45;margin:0 2px 8px;word-break:keep-all}
+.searchBox{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px;margin-bottom:10px}
+.mainSearchRow{display:grid;grid-template-columns:1fr 74px;gap:7px;margin-bottom:8px}
 input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px;font-size:16px;background:#fff;outline:none}
-#q{border:2px solid #d1d5db;border-radius:16px;padding:12px;font-size:17px}
+#q{border:2px solid #d1d5db;border-radius:16px;padding:13px;font-size:17px}
 #q:focus,input:focus,select:focus{border-color:var(--blue)}
-.quickRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:7px}
-.quickBtn{background:#fff;color:#111827;border:1px solid var(--line);font-size:13px;min-height:42px}
-.quickBtn.active{background:#111827;color:#fff;border-color:#111827}
-.panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:8px;margin-top:6px}
+button{border:0;border-radius:16px;padding:0 12px;background:var(--dark);color:#fff;font-weight:900;font-size:14px;min-height:44px;cursor:pointer}
+button:disabled{opacity:.55}
+.detailToggle{width:100%;background:#f9fafb;color:#111827;border:1px solid var(--line);min-height:40px}
+.detailArea{margin-top:8px}
 .hidden{display:none}
-.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.formGrid label,.field label{font-size:12px;color:var(--muted);font-weight:900;display:block;margin:0 0 4px 2px}
-.boxSearch{display:grid;grid-template-columns:1fr 84px;gap:8px;margin-top:8px}
-.filters{display:flex;gap:7px;overflow:auto;padding:8px 0 0;scrollbar-width:none}
+.quickRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:8px}
+.quickBtn{background:#f9fafb;color:#111827;border:1px solid var(--line);font-size:13px;min-height:40px}
+.quickBtn.active{background:#111827;color:#fff;border-color:#111827}
+.filterGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.filterGrid label{font-size:12px;color:var(--muted);font-weight:900;display:block;margin:0 0 4px 2px}
+.boxSearch{display:grid;grid-template-columns:1fr 82px;gap:8px}
+.filters{display:flex;gap:7px;overflow:auto;padding:0 0 10px;scrollbar-width:none}
 .filters::-webkit-scrollbar{display:none}
-.chip{border:1px solid var(--line);background:#fff;color:#374151;border-radius:999px;padding:9px 12px;font-size:13px;white-space:nowrap;cursor:pointer;font-weight:800}
+.chip{
+  border:1px solid var(--line);background:#fff;color:#374151;border-radius:999px;padding:9px 12px;font-size:13px;
+  white-space:nowrap;cursor:pointer;font-weight:800;
+}
 .chip.active{background:#111827;color:#fff;border-color:#111827}
-.content{max-width:820px;margin:0 auto;padding:10px}
 .count{font-size:13px;color:#374151;margin:4px 2px 10px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 .name{font-size:18px;font-weight:900;line-height:1.35;margin-bottom:8px}
@@ -54,98 +65,99 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 .exceptionBtns button{min-height:36px;border-radius:12px;font-size:12px;padding:0 6px}.btnManu{background:#f59e0b}.btnExclude{background:#6b7280}.btnExpiry{background:#2563eb}
 .empty{background:#fff;border:1px dashed #d1d5db;border-radius:18px;padding:22px;color:#6b7280;line-height:1.7}
 .highlight{background:#fff3a3;border-radius:4px}
-.bottomBar{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:20}
-.bottomQuick{max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 96px;gap:7px;margin-bottom:7px}.bottomQuick input{height:44px;border:2px solid #d1d5db;border-radius:14px;padding:0 12px;font-size:16px;background:#fff}.bottomQuick input:focus{border-color:#2563eb}.bottomQuick button{min-height:44px;background:#111827}.bottomInner{max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.bottomInner button{min-height:48px;font-size:13px}.btnLight{background:#f3f4f6;color:#111827;border:1px solid var(--line)}.btnPrimary{background:#111827}.btnGreen{background:#0f766e}
+.bottomBar{
+  position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.98);border-top:1px solid var(--line);
+  padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:40;
+}
+.bottomWrap{max-width:820px;margin:0 auto}
+.bottomQuick{display:grid;grid-template-columns:1fr 84px;gap:7px;margin-bottom:7px}
+#quickInput{height:44px;border:2px solid #d1d5db;border-radius:14px;padding:0 12px;font-size:16px;background:#fff}
+#quickInput:focus{border-color:#2563eb}
+.bottomBtns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.bottomBtns button{min-height:44px;font-size:13px}.btnLight{background:#f3f4f6;color:#111827;border:1px solid var(--line)}.btnGreen{background:#0f766e}
 @media(max-width:430px){
-  h1{font-size:21px}.top{padding-left:8px;padding-right:8px}.content{padding:8px}.searchRow{grid-template-columns:1fr 68px}
-  #q{font-size:17px;padding:13px}.metaGrid{grid-template-columns:1fr}.card{border-radius:17px;padding:13px}.name{font-size:17px}
+  .headerInner{grid-template-columns:1fr 106px}
+  h1{font-size:19px}
+  .container{padding:8px}
+  .mainSearchRow{grid-template-columns:1fr 68px}
+  #q{font-size:17px;padding:12px}
+  .metaGrid{grid-template-columns:1fr}
+  .card{border-radius:17px;padding:13px}
+  .name{font-size:17px}
 }
 </style>
 </head>
 <body>
-<div class="top">
-  <div class="wrap">
-    <div class="headerRow">
-      <h1>🔎 가격검색</h1>
-      <select id="storeSelect" title="내 매장"></select>
-      <button id="syncBtn" onclick="syncData()">동기화</button>
+<header class="header">
+  <div class="headerInner">
+    <h1>🔎 가격검색</h1>
+    <select id="storeSelect" title="내 매장"></select>
+  </div>
+</header>
+
+<main class="container">
+  <div id="status" class="status">데이터 불러오는 중...</div>
+
+  <section class="searchBox">
+    <div class="mainSearchRow">
+      <input id="q" type="search" placeholder="상품명 / 잡화 29 / 바코드" autocomplete="off">
+      <button onclick="clearSearch()">초기화</button>
     </div>
-    <div id="status" class="status">데이터 불러오는 중...</div>
 
-    <div class="modeRow">
-      <button class="modeBtn active" id="searchModeBtn" onclick="setMode('search')">상품 검색</button>
-      <button class="modeBtn" id="boxModeBtn" onclick="setMode('box')">박스 검수</button>
-    </div>
+    <button class="detailToggle" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
 
-    <div id="searchPanel">
-      <div class="searchRow">
-        <input id="q" type="search" placeholder="상품명 / 잡화 29 / 바코드" autocomplete="off">
-        <button onclick="clearSearch()">초기화</button>
-      </div>
-
+    <div class="detailArea hidden" id="detailArea">
       <div class="quickRow">
         <button class="quickBtn" id="todayBtn" onclick="setQuickDate('today')">오늘</button>
         <button class="quickBtn" id="yesterdayBtn" onclick="setQuickDate('yesterday')">어제</button>
         <button class="quickBtn" id="recentBtn" onclick="setQuickDate('recent7')">최근7일</button>
       </div>
 
-      <div class="panel hidden" id="filterPanel">
-        <div class="formGrid">
-          <div><label>시작 입고일</label><input id="dateStart" type="date"></div>
-          <div><label>종료 입고일</label><input id="dateEnd" type="date"></div>
-        </div>
-        <div class="boxSearch">
-          <input id="boxNoInput" type="number" inputmode="numeric" placeholder="박스번호 예: 7">
-          <button onclick="search()">박스검색</button>
-        </div>
+      <div class="filterGrid">
+        <div><label>시작 입고일</label><input id="dateStart" type="date"></div>
+        <div><label>종료 입고일</label><input id="dateEnd" type="date"></div>
       </div>
 
-      <div class="filters">
-        <span class="chip active" data-menu="전체상품">전체</span>
-        <span class="chip" data-menu="유통기한관리">유통기한</span>
-        <span class="chip" data-menu="만료">만료</span>
-        <span class="chip" data-menu="7일이내">7일</span>
-        <span class="chip" data-menu="30일이내">30일</span>
-        <span class="chip" data-menu="60일이내">60일</span>
-        <span class="chip" data-menu="장기재고">장기</span>
-        <span class="chip" data-menu="기한확인필요">기한확인</span>
-        <span class="chip" data-menu="비관리대상">비관리</span>
+      <div class="boxSearch">
+        <input id="boxNoInput" type="number" inputmode="numeric" placeholder="박스번호 예: 7">
+        <button onclick="search()">박스검색</button>
       </div>
     </div>
+  </section>
 
-    <div id="boxPanel" class="hidden">
-      <div class="panel">
-        <div class="formGrid">
-          <div><label>입고일</label><input id="boxDate" type="date"></div>
-          <div><label>박스번호</label><input id="boxInspectNo" type="number" inputmode="numeric" placeholder="예: 7"></div>
-        </div>
-        <button style="width:100%;margin-top:8px;background:#0f766e" onclick="boxInspect()">박스 검수 시작</button>
-      </div>
-    </div>
+  <div class="filters">
+    <span class="chip active" data-menu="전체상품">전체</span>
+    <span class="chip" data-menu="유통기한관리">유통기한</span>
+    <span class="chip" data-menu="만료">만료</span>
+    <span class="chip" data-menu="7일이내">7일</span>
+    <span class="chip" data-menu="30일이내">30일</span>
+    <span class="chip" data-menu="60일이내">60일</span>
+    <span class="chip" data-menu="장기재고">장기</span>
+    <span class="chip" data-menu="기한확인필요">기한확인</span>
+    <span class="chip" data-menu="비관리대상">비관리</span>
   </div>
-</div>
 
-<div class="content">
   <div id="count" class="count"></div>
   <div id="results"></div>
-</div>
+</main>
 
 <div class="bottomBar">
-  <div class="bottomQuick">
-    <input id="bottomQuickInput" type="search" placeholder="상품명 또는 박스번호">
-    <button onclick="bottomQuickSearch()">빠른검색</button>
-  </div>
-  <div class="bottomInner">
-    <button class="btnLight" onclick="window.scrollTo({top:0,behavior:'smooth'})">위로</button>
-    <button class="btnPrimary" onclick="document.getElementById('bottomQuickInput').focus()">하단검색</button>
-    <button class="btnGreen" onclick="syncData()">동기화</button>
+  <div class="bottomWrap">
+    <div class="bottomQuick">
+      <input id="quickInput" type="search" placeholder="상품명 또는 박스번호">
+      <button onclick="quickSearch()">검색</button>
+    </div>
+    <div class="bottomBtns">
+      <button class="btnLight" onclick="window.scrollTo({top:0,behavior:'smooth'})">위로</button>
+      <button onclick="document.getElementById('quickInput').focus()">하단검색</button>
+      <button class="btnGreen" onclick="syncData()">동기화</button>
+    </div>
   </div>
 </div>
 
 <script>
-const STORES=["영등포", "서원", "양재", "당산", "상계", "수서", "가양", "석촌", "강남", "마곡", "신대방3", "가락", "먹골", "흑석", "노원", "녹번", "왕십리", "부평", "하계", "평택안중", "대구", "수원", "갈산", "답십리", "선유도", "석계", "성남태평", "인천논현", "구로구청"];
-let DATA=[], RAW_DATA=[], META={}, currentMenu="전체상품", currentMode="search", STORE_OVERRIDES={};
+const STORES=["영등포","서원","양재","당산","상계","수서","가양","석촌","강남","마곡","신대방3","가락","먹골","흑석","노원","녹번","왕십리","부평","하계","평택안중","대구","수원","갈산","답십리","선유도","석계","성남태평","인천논현","구로구청"];
+let DATA=[], RAW_DATA=[], META={}, currentMenu="전체상품", STORE_OVERRIDES={};
 
 function pad(n){return String(n).padStart(2,"0")}
 function formatDate(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
@@ -158,20 +170,15 @@ function normalize(s){return String(s??"").toLowerCase().replaceAll(",",".").tri
 function highlight(text,query){let safe=escapeHtml(text);const tokens=normalize(query).split(/\s+/).filter(Boolean);for(const t of tokens){const e=t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');safe=safe.replace(new RegExp(`(${e})`,"ig"),'<span class="highlight">$1</span>')}return safe}
 function badgeClass(item){if(item.manage==="기한확인필요")return"warn";if(item.manage==="비관리대상")return"gray";if(item.section==="만료")return"risk";if(item.section==="7일이내"||item.section==="30일이내")return"warn";return"good"}
 function getStore(){return localStorage.getItem("selectedStore")||""}
-function setStore(v){
-  localStorage.setItem("selectedStore",v);
-  loadStoreOverrides().then(()=>{
-    if(META && (META.count || RAW_DATA.length)){
-      document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
-    }
-    search();
-  });
-}
+function setStore(v){localStorage.setItem("selectedStore",v);loadStoreOverrides().then(()=>{updateStatus();search();})}
 function initStore(){
   const sel=document.getElementById("storeSelect");
-  sel.innerHTML='<option value="">매장 선택</option>'+STORES.map(s=>`<option value="${s}">${s}</option>`).join("");
+  sel.innerHTML='<option value="">지점 선택</option>'+STORES.map(s=>`<option value="${s}">${s}</option>`).join("");
   sel.value=getStore();
   sel.addEventListener("change",e=>setStore(e.target.value));
+}
+function updateStatus(){
+  document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length||0).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
 }
 function applyStoreOverrides(items){
   return items.map(item=>{
@@ -181,8 +188,7 @@ function applyStoreOverrides(items){
     if(o.expiryDate){
       x.expiryDate=o.expiryDate;
       const diff=Math.floor((new Date(o.expiryDate)-new Date(todayStr()))/(1000*60*60*24));
-      x.daysLeft=diff;
-      x.manage="유통기한관리";
+      x.daysLeft=diff;x.manage="유통기한관리";
       if(diff<0)x.section="만료"; else if(diff<=7)x.section="7일이내"; else if(diff<=30)x.section="30일이내"; else if(diff<=60)x.section="60일이내"; else if(diff>=180)x.section="장기재고"; else x.section="전체";
       x.search=(x.search||"")+" "+o.expiryDate+" store_override";
     }
@@ -190,48 +196,34 @@ function applyStoreOverrides(items){
   });
 }
 async function loadStoreOverrides(){
-  const store=getStore();
-  STORE_OVERRIDES={};
-  if(!store) { DATA=RAW_DATA.slice(); return; }
+  const store=getStore();STORE_OVERRIDES={};
+  if(!store){DATA=RAW_DATA.slice();return}
   try{
     const r=await fetch(`/store_overrides/${encodeURIComponent(store)}?ts=`+Date.now());
     const res=await r.json();
-    if(res.ok) STORE_OVERRIDES=res.overrides||{};
+    if(res.ok)STORE_OVERRIDES=res.overrides||{};
   }catch(e){}
   DATA=applyStoreOverrides(RAW_DATA);
 }
 function passMenu(item){if(currentMenu==="전체상품")return true;if(currentMenu==="유통기한관리")return item.manage==="유통기한관리";if(currentMenu==="기한확인필요")return item.manage==="기한확인필요";if(currentMenu==="비관리대상")return item.manage==="비관리대상";return item.section===currentMenu}
-function setMode(mode){
-  currentMode=mode;
-  document.getElementById("searchModeBtn").classList.toggle("active",mode==="search");
-  document.getElementById("boxModeBtn").classList.toggle("active",mode==="box");
-  document.getElementById("searchPanel").classList.toggle("hidden",mode!=="search");
-  document.getElementById("boxPanel").classList.toggle("hidden",mode!=="box");
-  if(mode==="box"){document.getElementById("boxDate").value=document.getElementById("dateStart").value||yesterdayStr();document.getElementById("boxInspectNo").focus();}
-  search();
-}
-function setActiveQuick(id){["todayBtn","yesterdayBtn","recentBtn"].forEach(x=>document.getElementById(x).classList.remove("active"));if(id)document.getElementById(id).classList.add("active")}
-function setQuickDate(type){
-  const s=document.getElementById("dateStart"), e=document.getElementById("dateEnd");
-  if(type==="today"){s.value=todayStr();e.value=todayStr();setActiveQuick("todayBtn")}
-  if(type==="yesterday"){s.value=yesterdayStr();e.value=yesterdayStr();setActiveQuick("yesterdayBtn")}
-  if(type==="recent7"){s.value=recent7Start();e.value=todayStr();setActiveQuick("recentBtn")}
-  document.getElementById("filterPanel").classList.remove("hidden");
-  search();
-}
-function toggleFilter(){document.getElementById("filterPanel").classList.toggle("hidden")}
-
-function toggleDetailArea(){
+function toggleDetail(){
   const area=document.getElementById("detailArea");
   const btn=document.getElementById("detailToggleBtn");
   area.classList.toggle("hidden");
   btn.innerText=area.classList.contains("hidden")?"세부검색 펼치기":"세부검색 접기";
 }
-function bottomQuickSearch(){
-  const v=String(document.getElementById("bottomQuickInput").value||"").trim();
-  if(!v){document.getElementById("bottomQuickInput").focus();return;}
-
-  // 숫자만 입력하면 박스번호로 보고, 아니면 상품명 검색으로 처리
+function setActiveQuick(id){["todayBtn","yesterdayBtn","recentBtn"].forEach(x=>document.getElementById(x).classList.remove("active"));if(id)document.getElementById(id).classList.add("active")}
+function setQuickDate(type){
+  const s=document.getElementById("dateStart"),e=document.getElementById("dateEnd");
+  if(type==="today"){s.value=todayStr();e.value=todayStr();setActiveQuick("todayBtn")}
+  if(type==="yesterday"){s.value=yesterdayStr();e.value=yesterdayStr();setActiveQuick("yesterdayBtn")}
+  if(type==="recent7"){s.value=recent7Start();e.value=todayStr();setActiveQuick("recentBtn")}
+  search();
+}
+function clearSearch(){document.getElementById("q").value="";document.getElementById("boxNoInput").value="";document.getElementById("quickInput").value="";search();document.getElementById("q").focus()}
+function quickSearch(){
+  const v=String(document.getElementById("quickInput").value||"").trim();
+  if(!v){document.getElementById("quickInput").focus();return}
   if(/^\d+$/.test(v)){
     document.getElementById("boxNoInput").value=v;
     document.getElementById("q").value="";
@@ -240,13 +232,9 @@ function bottomQuickSearch(){
     document.getElementById("boxNoInput").value="";
   }
   search();
-  window.scrollTo({top:document.getElementById("count").offsetTop-70,behavior:"smooth"});
+  window.scrollTo({top:document.getElementById("count").offsetTop-66,behavior:"smooth"});
 }
-
-function focusMain(){document.getElementById("q").focus()}
-function clearSearch(){document.getElementById("q").value="";search();focusMain()}
 function search(){
-  
   const q=normalize(document.getElementById("q").value);
   const tokens=q.split(/\s+/).filter(Boolean);
   const start=document.getElementById("dateStart").value;
@@ -254,32 +242,21 @@ function search(){
   const boxNo=String(document.getElementById("boxNoInput").value||"").trim();
 
   let rows=DATA.filter(passMenu);
-  if(start) rows=rows.filter(item=>(item.inboundDate||"")>=start);
-  if(end) rows=rows.filter(item=>(item.inboundDate||"")<=end);
-  if(boxNo) rows=rows.filter(item=>String(item.boxNo||"").trim()===boxNo);
-  if(tokens.length) rows=rows.filter(item=>tokens.every(t=>normalize(item.search).includes(t)));
-  else if(!boxNo && !start && !end) rows=rows.slice(0,80);
+  if(start)rows=rows.filter(item=>(item.inboundDate||"")>=start);
+  if(end)rows=rows.filter(item=>(item.inboundDate||"")<=end);
+  if(boxNo)rows=rows.filter(item=>String(item.boxNo||"").trim()===boxNo);
+  if(tokens.length)rows=rows.filter(item=>tokens.every(t=>normalize(item.search).includes(t)));
+  else if(!boxNo&&!start&&!end)rows=rows.slice(0,80);
   render(rows,q,{boxNo,start,end});
-}
-function boxInspect(showEmpty=true){
-  const d=document.getElementById("boxDate").value;
-  const b=String(document.getElementById("boxInspectNo").value||"").trim();
-  if(!d||!b){
-    if(showEmpty) document.getElementById("results").innerHTML=`<div class="empty">입고일과 박스번호를 입력하세요.<br>예: 어제 / 7번 박스</div>`;
-    document.getElementById("count").innerHTML="박스 검수";
-    return;
-  }
-  let rows=DATA.filter(item=>(item.inboundDate||"")===d && String(item.boxNo||"").trim()===b);
-  render(rows,"",{boxNo:b,start:d,end:d,inspect:true});
 }
 function render(rows,q,info={}){
   const results=document.getElementById("results");
   let extra="";
-  if(info.start||info.end) extra+=` · 날짜 ${escapeHtml(info.start||"")}~${escapeHtml(info.end||"")}`;
-  if(info.boxNo) extra+=` · 박스 ${escapeHtml(info.boxNo)}`;
-  if(getStore()) extra+=` · 내 매장 ${escapeHtml(getStore())}`;
-  document.getElementById("count").innerHTML=`${info.inspect?"박스 검수":"검색 결과"} <b>${rows.length.toLocaleString()}</b>건${extra}`+(rows.length>150?" · 상위 150건 표시":"");
-  if(!rows.length){results.innerHTML=`<div class="empty">결과가 없습니다.<br>날짜, 박스번호, 매장 설정을 확인해 주세요.</div>`;return}
+  if(info.start||info.end)extra+=` · 날짜 ${escapeHtml(info.start||"")}~${escapeHtml(info.end||"")}`;
+  if(info.boxNo)extra+=` · 박스 ${escapeHtml(info.boxNo)}`;
+  if(getStore())extra+=` · 내 매장 ${escapeHtml(getStore())}`;
+  document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건${extra}`+(rows.length>150?" · 상위 150건 표시":"");
+  if(!rows.length){results.innerHTML=`<div class="empty">결과가 없습니다.<br>검색어, 날짜, 박스번호를 확인해 주세요.</div>`;return}
   results.innerHTML=rows.slice(0,150).map(item=>{
     const priceText=item.price?won(item.price):(item.priceBand?item.priceBand:"가격정보 없음");
     const days=(item.daysLeft===""||item.daysLeft==null)?"":`${item.daysLeft}일`;
@@ -317,55 +294,27 @@ function render(rows,q,info={}){
 }
 function hashCode(str){let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0}return h}
 async function saveStoreExpiry(itemKeyEncoded,inputId){
-  const store=getStore();
-  if(!store){alert("먼저 내 매장을 선택해 주세요.");document.getElementById("storeSelect").focus();return}
-  const value=document.getElementById(inputId).value;
-  if(!value){alert("유통기한을 선택해 주세요.");return}
+  const store=getStore();if(!store){alert("오른쪽 상단에서 내 매장을 선택해 주세요.");document.getElementById("storeSelect").focus();return}
+  const value=document.getElementById(inputId).value;if(!value){alert("유통기한을 선택해 주세요.");return}
   if(!confirm(`${store} 매장 기준으로 유통기한 ${value}를 저장할까요?`))return;
-  try{
-    const r=await fetch(`/set_store_item_expiry/${itemKeyEncoded}/${encodeURIComponent(store)}/${value}?ts=`+Date.now());
-    const res=await r.json();
-    if(!res.ok){alert("저장 실패: "+res.message);return}
-    alert("저장 완료");
-    await loadData();
-  }catch(e){alert("저장 실패: "+e)}
+  try{const r=await fetch(`/set_store_item_expiry/${itemKeyEncoded}/${encodeURIComponent(store)}/${value}?ts=`+Date.now());const res=await r.json();if(!res.ok){alert("저장 실패: "+res.message);return}alert("저장 완료");await loadData()}catch(e){alert("저장 실패: "+e)}
 }
 async function setStoreException(itemKeyEncoded,mode){
-  const store=getStore();
-  if(!store){alert("먼저 내 매장을 선택해 주세요.");document.getElementById("storeSelect").focus();return}
+  const store=getStore();if(!store){alert("오른쪽 상단에서 내 매장을 선택해 주세요.");document.getElementById("storeSelect").focus();return}
   const label=mode==="manufacture"?"제조일 상품":(mode==="exclude"?"기한관리 제외":"유통기한 상품");
   if(!confirm(`${store} 매장 기준으로 이 행을 [${label}] 처리할까요?`))return;
-  try{
-    const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${itemKeyEncoded}/${mode}?ts=`+Date.now());
-    const res=await r.json();
-    if(!res.ok){alert("설정 실패: "+res.message);return}
-    alert("설정 저장 완료");
-    await loadData();
-  }catch(e){alert("설정 실패: "+e)}
+  try{const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${itemKeyEncoded}/${mode}?ts=`+Date.now());const res=await r.json();if(!res.ok){alert("설정 실패: "+res.message);return}alert("설정 저장 완료");await loadData()}catch(e){alert("설정 실패: "+e)}
 }
 async function loadData(){
   try{
-    const r=await fetch("search_data.json?ts="+Date.now());
-    const data=await r.json();
-    META=data; RAW_DATA=data.items||[];
-    await loadStoreOverrides();
-    document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(data.updatedAt||"-")}</b> · 상품 <b>${(data.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
-    search();
-  }catch(err){
-    document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";
-    document.getElementById("results").innerHTML=`<div class="empty">데이터 파일이 없습니다.<br>동기화 버튼을 눌러 가격리스트를 불러오세요.</div>`;
-  }
+    const r=await fetch("search_data.json?ts="+Date.now());const data=await r.json();
+    META=data;RAW_DATA=data.items||[];await loadStoreOverrides();updateStatus();search();
+  }catch(err){document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";document.getElementById("results").innerHTML=`<div class="empty">데이터 파일이 없습니다.<br>동기화 버튼을 눌러 가격리스트를 불러오세요.</div>`}
 }
 async function syncData(){
   const btns=[...document.querySelectorAll("button")].filter(b=>b.innerText.includes("동기화"));
-  btns.forEach(b=>{b.disabled=true;b.innerText="동기화중"});
-  document.getElementById("status").innerHTML="가격리스트 동기화 중...";
-  try{
-    const r=await fetch("/sync?ts="+Date.now());
-    const res=await r.json();
-    if(!res.ok) alert("동기화 실패: "+res.message);
-    await loadData();
-  }catch(e){alert("동기화 실패: "+e)}
+  btns.forEach(b=>{b.disabled=true;b.innerText="동기화중"});document.getElementById("status").innerHTML="가격리스트 동기화 중...";
+  try{const r=await fetch("/sync?ts="+Date.now());const res=await r.json();if(!res.ok)alert("동기화 실패: "+res.message);await loadData()}catch(e){alert("동기화 실패: "+e)}
   finally{btns.forEach(b=>{b.disabled=false;b.innerText="동기화"})}
 }
 document.querySelectorAll(".chip").forEach(chip=>chip.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");currentMenu=chip.dataset.menu;search()}));
@@ -373,10 +322,8 @@ document.getElementById("q").addEventListener("input",search);
 document.getElementById("dateStart").addEventListener("change",()=>{setActiveQuick(null);search()});
 document.getElementById("dateEnd").addEventListener("change",()=>{setActiveQuick(null);search()});
 document.getElementById("boxNoInput").addEventListener("input",search);
-document.getElementById("bottomQuickInput").addEventListener("keydown",e=>{if(e.key==="Enter")bottomQuickSearch();});
-document.getElementById("boxInspectNo").addEventListener("keydown",e=>{if(e.key==="Enter")boxInspect()});
-initStore();
-loadData();
+document.getElementById("quickInput").addEventListener("keydown",e=>{if(e.key==="Enter")quickSearch()});
+initStore();loadData();
 </script>
 </body>
 </html>
