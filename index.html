@@ -256,6 +256,11 @@ function render(rows,q,boxNo,start,end){
         <div>비고: ${escapeHtml(item.note||"-")}</div>
         <div>시트/행: ${escapeHtml(item.sheet||"-")} / ${escapeHtml(item.row||"-")}</div>
       </div>
+      <div class="exceptionBtns">
+        <button class="btnManu" onclick="setException(encodeURIComponent(item.product),'manufacture')">제조일</button>
+        <button class="btnExclude" onclick="setException(encodeURIComponent(item.product),'exclude')">관리제외</button>
+        <button class="btnExpiry" onclick="setException(encodeURIComponent(item.product),'expiry')">유통기한</button>
+      </div>
     </div>`;
   }).join("");
 }
