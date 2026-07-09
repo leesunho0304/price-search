@@ -13,26 +13,25 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);font-family:Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:var(--text);padding-bottom:74px}
-.top{position:sticky;top:0;background:rgba(243,244,246,.98);backdrop-filter:blur(10px);z-index:10;padding:10px 10px 8px;border-bottom:1px solid var(--line)}
-.top.compact .collapsibleArea{display:none}.top.compact{padding-bottom:6px}.top.compact .status{display:none}.toggleSearchBtn{background:#374151;min-height:38px;border-radius:999px;font-size:12px;padding:0 10px}
+.top{position:relative;background:var(--bg);padding:8px 8px 6px;border-bottom:1px solid var(--line)}
 .wrap{max-width:820px;margin:0 auto}
-.headerRow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}
+.headerRow{position:sticky;top:0;z-index:30;background:rgba(243,244,246,.98);backdrop-filter:blur(10px);display:grid;grid-template-columns:1fr 112px auto;align-items:center;gap:6px;margin:-8px -8px 8px;padding:8px;border-bottom:1px solid var(--line)}
 h1{font-size:22px;margin:0;font-weight:900}
 .status{font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:8px;word-break:keep-all}
 button{border:0;border-radius:16px;padding:0 12px;background:var(--dark);color:#fff;font-weight:900;font-size:14px;min-height:46px;cursor:pointer}
-button:disabled{opacity:.55}
+button:disabled{opacity:.55}#storeSelect{height:36px;border:1px solid #d1d5db;border-radius:999px;background:#fff;font-size:12px;padding:0 8px;min-width:0;width:112px}
 #syncBtn{background:var(--teal);min-height:38px;border-radius:999px;font-size:12px;padding:0 10px}
-.modeRow{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:7px}
+.modeRow{display:none}
 .modeBtn{background:#fff;color:#111827;border:1px solid var(--line);font-size:14px;min-height:42px}
 .modeBtn.active{background:#111827;color:#fff;border-color:#111827}
 .searchRow{display:grid;grid-template-columns:1fr 76px;gap:7px;margin-bottom:7px}
 input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px;font-size:16px;background:#fff;outline:none}
-#q{border:2px solid #d1d5db;border-radius:16px;padding:14px;font-size:18px}
+#q{border:2px solid #d1d5db;border-radius:16px;padding:12px;font-size:17px}
 #q:focus,input:focus,select:focus{border-color:var(--blue)}
 .quickRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:7px}
 .quickBtn{background:#fff;color:#111827;border:1px solid var(--line);font-size:13px;min-height:42px}
 .quickBtn.active{background:#111827;color:#fff;border-color:#111827}
-.panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px;margin-top:6px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:8px;margin-top:6px}
 .hidden{display:none}
 .formGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .formGrid label,.field label{font-size:12px;color:var(--muted);font-weight:900;display:block;margin:0 0 4px 2px}
@@ -56,7 +55,7 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 .empty{background:#fff;border:1px dashed #d1d5db;border-radius:18px;padding:22px;color:#6b7280;line-height:1.7}
 .highlight{background:#fff3a3;border-radius:4px}
 .bottomBar{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.97);border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));z-index:20}
-.bottomInner{max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.bottomQuick{max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 96px;gap:7px;margin-bottom:7px}.bottomQuick input{height:44px;border:2px solid #d1d5db;border-radius:14px;padding:0 12px;font-size:16px;background:#fff}.bottomQuick input:focus{border-color:#2563eb}.bottomQuick button{min-height:44px;background:#111827}.bottomInner{max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .bottomInner button{min-height:48px;font-size:13px}.btnLight{background:#f3f4f6;color:#111827;border:1px solid var(--line)}.btnPrimary{background:#111827}.btnGreen{background:#0f766e}
 @media(max-width:430px){
   h1{font-size:21px}.top{padding-left:8px;padding-right:8px}.content{padding:8px}.searchRow{grid-template-columns:1fr 68px}
@@ -69,17 +68,10 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
   <div class="wrap">
     <div class="headerRow">
       <h1>🔎 가격검색</h1>
-      <button class="toggleSearchBtn" onclick="toggleSearchArea()">검색창 접기</button><button id="syncBtn" onclick="syncData()">동기화</button>
+      <select id="storeSelect" title="내 매장"></select>
+      <button id="syncBtn" onclick="syncData()">동기화</button>
     </div>
     <div id="status" class="status">데이터 불러오는 중...</div>
-
-    <div class="collapsibleArea">
-<div class="panel" id="storePanel">
-      <div class="field">
-        <label>내 매장 선택 <span style="color:#6b7280;font-weight:700">처음 한 번만 선택하면 이 휴대폰에 저장됩니다.</span></label>
-        <select id="storeSelect"></select>
-      </div>
-    </div>
 
     <div class="modeRow">
       <button class="modeBtn active" id="searchModeBtn" onclick="setMode('search')">상품 검색</button>
@@ -133,7 +125,6 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
     </div>
   </div>
 </div>
-</div>
 
 <div class="content">
   <div id="count" class="count"></div>
@@ -141,9 +132,13 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 </div>
 
 <div class="bottomBar">
+  <div class="bottomQuick">
+    <input id="bottomQuickInput" type="search" placeholder="상품명 또는 박스번호">
+    <button onclick="bottomQuickSearch()">빠른검색</button>
+  </div>
   <div class="bottomInner">
-    <button class="btnLight" onclick="toggleSearchArea()">검색창</button>
-    <button class="btnPrimary" onclick="focusMain()">검색</button>
+    <button class="btnLight" onclick="window.scrollTo({top:0,behavior:'smooth'})">위로</button>
+    <button class="btnPrimary" onclick="document.getElementById('bottomQuickInput').focus()">하단검색</button>
     <button class="btnGreen" onclick="syncData()">동기화</button>
   </div>
 </div>
@@ -166,7 +161,7 @@ function getStore(){return localStorage.getItem("selectedStore")||""}
 function setStore(v){
   localStorage.setItem("selectedStore",v);
   loadStoreOverrides().then(()=>{
-    if(META && (META.items || RAW_DATA.length)){
+    if(META && (META.count || RAW_DATA.length)){
       document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
     }
     search();
@@ -225,22 +220,33 @@ function setQuickDate(type){
   search();
 }
 function toggleFilter(){document.getElementById("filterPanel").classList.toggle("hidden")}
-function toggleSearchArea(){
-  const top=document.querySelector(".top");
-  const btn=document.querySelector(".toggleSearchBtn");
-  top.classList.toggle("compact");
-  const compact=top.classList.contains("compact");
-  if(btn) btn.innerText=compact?"검색창 펼치기":"검색창 접기";
+
+function toggleDetailArea(){
+  const area=document.getElementById("detailArea");
+  const btn=document.getElementById("detailToggleBtn");
+  area.classList.toggle("hidden");
+  btn.innerText=area.classList.contains("hidden")?"세부검색 펼치기":"세부검색 접기";
+}
+function bottomQuickSearch(){
+  const v=String(document.getElementById("bottomQuickInput").value||"").trim();
+  if(!v){document.getElementById("bottomQuickInput").focus();return;}
+
+  // 숫자만 입력하면 박스번호로 보고, 아니면 상품명 검색으로 처리
+  if(/^\d+$/.test(v)){
+    document.getElementById("boxNoInput").value=v;
+    document.getElementById("q").value="";
+  }else{
+    document.getElementById("q").value=v;
+    document.getElementById("boxNoInput").value="";
+  }
+  search();
+  window.scrollTo({top:document.getElementById("count").offsetTop-70,behavior:"smooth"});
 }
 
-function focusMain(){
-  const top=document.querySelector(".top");
-  if(top.classList.contains("compact")) toggleSearchArea();
-  currentMode==="box"?document.getElementById("boxInspectNo").focus():document.getElementById("q").focus();
-}
+function focusMain(){document.getElementById("q").focus()}
 function clearSearch(){document.getElementById("q").value="";search();focusMain()}
 function search(){
-  if(currentMode==="box"){ boxInspect(false); return; }
+  
   const q=normalize(document.getElementById("q").value);
   const tokens=q.split(/\s+/).filter(Boolean);
   const start=document.getElementById("dateStart").value;
@@ -367,6 +373,7 @@ document.getElementById("q").addEventListener("input",search);
 document.getElementById("dateStart").addEventListener("change",()=>{setActiveQuick(null);search()});
 document.getElementById("dateEnd").addEventListener("change",()=>{setActiveQuick(null);search()});
 document.getElementById("boxNoInput").addEventListener("input",search);
+document.getElementById("bottomQuickInput").addEventListener("keydown",e=>{if(e.key==="Enter")bottomQuickSearch();});
 document.getElementById("boxInspectNo").addEventListener("keydown",e=>{if(e.key==="Enter")boxInspect()});
 initStore();
 loadData();
