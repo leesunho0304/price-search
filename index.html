@@ -74,7 +74,7 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 
     <div class="panel" id="storePanel">
       <div class="field">
-        <label>내 매장 선택</label>
+        <label>내 매장 선택 <span style="color:#6b7280;font-weight:700">처음 한 번만 선택하면 이 휴대폰에 저장됩니다.</span></label>
         <select id="storeSelect"></select>
       </div>
     </div>
@@ -146,7 +146,7 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 </div>
 
 <script>
-const STORES=["영등포","서원","양재","당산","상계","수서","가양","석촌","강남","마곡","신대방3","가락","먹골","흑석","노원","녹번","왕십리","부평","하계","평택안중","대구","수원","갈산","답십리","선유도","석계","성남태평","인천논현","구로구청"];
+const STORES=["영등포", "서원", "양재", "당산", "상계", "수서", "가양", "석촌", "강남", "마곡", "신대방3", "가락", "먹골", "흑석", "노원", "녹번", "왕십리", "부평", "하계", "평택안중", "대구", "수원", "갈산", "답십리", "선유도", "석계", "성남태평", "인천논현", "구로구청"];
 let DATA=[], RAW_DATA=[], META={}, currentMenu="전체상품", currentMode="search", STORE_OVERRIDES={};
 
 function pad(n){return String(n).padStart(2,"0")}
@@ -160,7 +160,15 @@ function normalize(s){return String(s??"").toLowerCase().replaceAll(",",".").tri
 function highlight(text,query){let safe=escapeHtml(text);const tokens=normalize(query).split(/\s+/).filter(Boolean);for(const t of tokens){const e=t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');safe=safe.replace(new RegExp(`(${e})`,"ig"),'<span class="highlight">$1</span>')}return safe}
 function badgeClass(item){if(item.manage==="기한확인필요")return"warn";if(item.manage==="비관리대상")return"gray";if(item.section==="만료")return"risk";if(item.section==="7일이내"||item.section==="30일이내")return"warn";return"good"}
 function getStore(){return localStorage.getItem("selectedStore")||""}
-function setStore(v){localStorage.setItem("selectedStore",v);loadStoreOverrides().then(()=>search())}
+function setStore(v){
+  localStorage.setItem("selectedStore",v);
+  loadStoreOverrides().then(()=>{
+    if(META && (META.items || RAW_DATA.length)){
+      document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
+    }
+    search();
+  });
+}
 function initStore(){
   const sel=document.getElementById("storeSelect");
   sel.innerHTML='<option value="">매장 선택</option>'+STORES.map(s=>`<option value="${s}">${s}</option>`).join("");
@@ -320,7 +328,7 @@ async function loadData(){
     const data=await r.json();
     META=data; RAW_DATA=data.items||[];
     await loadStoreOverrides();
-    document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(data.updatedAt||"-")}</b> · 상품 <b>${(data.count||RAW_DATA.length).toLocaleString()}</b>개 · 10분마다 자동 확인`;
+    document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(data.updatedAt||"-")}</b> · 상품 <b>${(data.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장: <b>${escapeHtml(getStore()||"미선택")}</b> · 10분마다 자동 확인`;
     search();
   }catch(err){
     document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";
