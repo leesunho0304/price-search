@@ -250,7 +250,7 @@ function render(rows,q,boxNo,start,end){
       </div>
       <div class="meta metaGrid">
         <div>입고일: <b>${escapeHtml(item.inboundDate||"-")}</b></div>
-        <div>박스번호: <b>${escapeHtml(item.boxNo||"-")}</b></div>
+        <div>매장: <b>${escapeHtml(item.store||"-")}</b></div><div>박스번호: <b>${escapeHtml(item.boxNo||"-")}</b></div>
         <div>유통기한: <b>${escapeHtml(item.expiryDate||"-")}</b> ${days?`(${escapeHtml(days)})`:""}</div>
         <div>바코드: ${escapeHtml(item.barcode||"-")}</div>
         <div>비고: ${escapeHtml(item.note||"-")}</div>
@@ -258,19 +258,19 @@ function render(rows,q,boxNo,start,end){
       </div>
       <div class="expiryEdit">
         <input type="date" id="expiry-${item.row}" value="${escapeHtml(item.expiryDate || '')}">
-        <button onclick="saveExpiryOverride('${encodeURIComponent(item.product)}','expiry-${item.row}')">저장</button>
+        <button onclick="saveItemExpiry('${encodeURIComponent(item.itemKey)}','expiry-${item.row}')">저장</button>
       </div>
       <div class="exceptionBtns">
-        <button class="btnManu" onclick="setException('${encodeURIComponent(item.product)}','manufacture')">제조일</button>
-        <button class="btnExclude" onclick="setException('${encodeURIComponent(item.product)}','exclude')">관리제외</button>
-        <button class="btnExpiry" onclick="setException('${encodeURIComponent(item.product)}','expiry')">유통기한</button>
+        <button class="btnManu" onclick="setItemException('${encodeURIComponent(item.itemKey)}','manufacture')">제조일</button>
+        <button class="btnExclude" onclick="setItemException('${encodeURIComponent(item.itemKey)}','exclude')">관리제외</button>
+        <button class="btnExpiry" onclick="setItemException('${encodeURIComponent(item.itemKey)}','expiry')">유통기한</button>
       </div>
     </div>`;
   }).join("");
 }
 
 
-async function saveExpiryOverride(productEncoded, inputId){
+async function saveItemExpiry(itemKeyEncoded, inputId){
   const value = document.getElementById(inputId).value;
   if(!value){
     alert("유통기한을 선택해 주세요.");
@@ -279,13 +279,28 @@ async function saveExpiryOverride(productEncoded, inputId){
   if(!confirm(`유통기한을 ${value}로 저장할까요?`)) return;
 
   try{
-    const r = await fetch(`/set_expiry/${productEncoded}/${value}?ts=`+Date.now());
+    const r = await fetch(`/set_item_expiry/${itemKeyEncoded}/${value}?ts=`+Date.now());
     const res = await r.json();
     if(!res.ok){ alert("저장 실패: "+res.message); return; }
     alert("유통기한 저장 완료");
     await loadData();
   }catch(e){
     alert("저장 실패: "+e);
+  }
+}
+
+
+async function setItemException(itemKeyEncoded, mode){
+  const label = mode==="manufacture" ? "제조일 상품" : (mode==="exclude" ? "기한관리 제외" : "유통기한 상품");
+  if(!confirm(`이 행을 [${label}]으로 설정할까요?\\n같은 상품이라도 매장/입고일/박스가 다르면 따로 저장됩니다.`)) return;
+  try{
+    const r = await fetch(`/set_item_exception/${itemKeyEncoded}/${mode}?ts=`+Date.now());
+    const res = await r.json();
+    if(!res.ok){ alert("설정 실패: "+res.message); return; }
+    alert("설정 저장 완료");
+    await loadData();
+  }catch(e){
+    alert("설정 실패: "+e);
   }
 }
 
@@ -308,7 +323,7 @@ async function loadData(){
     const r=await fetch("search_data.json?ts="+Date.now());
     const data=await r.json();
     META=data; DATA=data.items||[];
-    document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(data.updatedAt||"-")}</b> · 상품 <b>${(data.count||DATA.length).toLocaleString()}</b>개`;
+    document.getElementById("status").innerHTML=`업데이트: <b>${escapeHtml(data.updatedAt||"-")}</b> · 상품 <b>${(data.count||DATA.length).toLocaleString()}</b>개 · 10분마다 자동 확인`;
     search();
   }catch(err){
     document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";

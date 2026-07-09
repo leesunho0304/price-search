@@ -11,6 +11,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 DATA_FILE = "search_data.json"
 EXCEPTION_FILE = "exceptions.json"
+AUTO_SYNC_MINUTES = 10
 VALID_CATEGORIES = ["식품", "뷰티", "생활", "의류", "패션", "잡화", "신발", "도서", "아동", "가전", "미분류"]
 
 app = Flask(__name__, static_folder=".")
@@ -192,6 +193,40 @@ def get_exception_mode(product_name, exceptions):
     return ""
 
 
+
+def make_item_key(store, inbound, box_no, product, sheet, row):
+    """
+    같은 상품이라도 매장/입고일/박스/행이 다르면 다른 물건으로 봄.
+    매장명이 없으면 시트+행까지 포함해 충돌을 줄임.
+    """
+    parts = [
+        clean_text(store) or "전체",
+        clean_text(inbound),
+        clean_text(box_no),
+        clean_text(product),
+        clean_text(sheet),
+        str(row or "")
+    ]
+    return "|".join(parts)
+
+
+def find_item_override(item_key, product_name, exceptions):
+    """
+    1순위: item_key 정확히 일치
+    2순위: 기존 상품명 예외 부분일치
+    """
+    if item_key and item_key in exceptions:
+        return item_key, exceptions[item_key]
+
+    name = clean_text(product_name)
+    for key in sorted(exceptions.keys(), key=len, reverse=True):
+        key_clean = clean_text(key)
+        if key_clean and key_clean in name:
+            return key, exceptions.get(key, {})
+
+    return "", {}
+
+
 def parse_sheet(values, title, exceptions=None):
     y = sheet_year(title)
     exceptions = exceptions or {}
@@ -262,13 +297,13 @@ def parse_sheet(values, title, exceptions=None):
             manage = "유통기한관리" if expiry else "비관리대상"
 
         exception_mode = get_exception_mode(product, exceptions)
-        # 예외상품 설정 적용
-        override_expiry = ""
-        if exception_mode:
-            for key in sorted(exceptions.keys(), key=len, reverse=True):
-                if clean_text(key) and clean_text(key) in product:
-                    override_expiry = clean_text(exceptions.get(key, {}).get("expiryDate", ""))
-                    break
+        # 예외/수정 설정 적용
+        item_key = make_item_key(store, inbound, box_no, product, title, r_idx)
+        matched_key, override = find_item_override(item_key, product, exceptions)
+        exception_mode = clean_text(override.get("mode", "")) if override else ""
+
+        override_expiry = clean_text(override.get("expiryDate", "")) if override else ""
+        override_note = clean_text(override.get("memo", "")) if override else ""
 
         if override_expiry:
             expiry = override_expiry
@@ -286,7 +321,7 @@ def parse_sheet(values, title, exceptions=None):
         elif exception_mode == "expiry":
             pass
 
-        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {expiry} {note} {barcode} {box_no} {store} {item_type} {exception_mode}".lower()
+        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {expiry} {note} {barcode} {box_no} {store} {item_type} {exception_mode} {override_note}".lower()
 
         rows.append({
             "manage": manage,
@@ -308,6 +343,9 @@ def parse_sheet(values, title, exceptions=None):
             "row": r_idx,
             "search": search,
             "exceptionMode": exception_mode,
+            "itemKey": item_key,
+            "overrideKey": matched_key,
+            "overrideMemo": override_note,
         })
 
     return rows
@@ -380,8 +418,25 @@ def index():
 
 @app.route("/search_data.json")
 def data():
-    if not Path(DATA_FILE).exists():
-        sync_data()
+    should_sync = not Path(DATA_FILE).exists()
+
+    if not should_sync:
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                current = json.load(f)
+            updated_at = current.get("updatedAt", "")
+            dt = datetime.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
+            age_minutes = (datetime.now() - dt).total_seconds() / 60
+            should_sync = age_minutes >= AUTO_SYNC_MINUTES
+        except Exception:
+            should_sync = True
+
+    if should_sync:
+        try:
+            sync_data()
+        except Exception:
+            pass
+
     return send_from_directory(".", DATA_FILE)
 
 
@@ -464,6 +519,96 @@ def set_expiry(product, expiry_date):
         pass
 
     return jsonify({"ok": True, "product": product, "expiryDate": expiry_date})
+
+
+
+@app.route("/set_item_expiry/<path:item_key>/<expiry_date>")
+def set_item_expiry(item_key, expiry_date):
+    item_key = clean_text(item_key)
+    expiry_date = clean_text(expiry_date)
+
+    if not item_key:
+        return jsonify({"ok": False, "message": "item_key가 없습니다."})
+
+    try:
+        datetime.strptime(expiry_date, "%Y-%m-%d")
+    except Exception:
+        return jsonify({"ok": False, "message": "유통기한 형식이 올바르지 않습니다. YYYY-MM-DD 형식이어야 합니다."})
+
+    data = load_exceptions()
+    existing = data.get(item_key, {})
+    data[item_key] = {
+        **existing,
+        "mode": "expiry",
+        "expiryDate": expiry_date,
+        "scope": "item",
+        "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    save_exceptions(data)
+
+    try:
+        sync_data()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "itemKey": item_key, "expiryDate": expiry_date})
+
+
+@app.route("/set_item_exception/<path:item_key>/<mode>")
+def set_item_exception(item_key, mode):
+    if mode not in ["manufacture", "exclude", "expiry", "clear"]:
+        return jsonify({"ok": False, "message": "잘못된 mode입니다."})
+
+    item_key = clean_text(item_key)
+    if not item_key:
+        return jsonify({"ok": False, "message": "item_key가 없습니다."})
+
+    data = load_exceptions()
+    if mode == "clear":
+        data.pop(item_key, None)
+    else:
+        existing = data.get(item_key, {})
+        data[item_key] = {
+            **existing,
+            "mode": mode,
+            "scope": "item",
+            "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    save_exceptions(data)
+
+    try:
+        sync_data()
+    except Exception:
+        pass
+
+    return jsonify({"ok": True, "itemKey": item_key, "mode": mode})
+
+
+@app.route("/status")
+def status():
+    need_sync = True
+    updated_at = ""
+    count = 0
+
+    if Path(DATA_FILE).exists():
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            updated_at = data.get("updatedAt", "")
+            count = data.get("count", 0)
+            dt = datetime.strptime(updated_at, "%Y-%m-%d %H:%M:%S")
+            age_minutes = (datetime.now() - dt).total_seconds() / 60
+            need_sync = age_minutes >= AUTO_SYNC_MINUTES
+        except Exception:
+            need_sync = True
+
+    return jsonify({
+        "ok": True,
+        "needSync": need_sync,
+        "updatedAt": updated_at,
+        "count": count,
+        "autoSyncMinutes": AUTO_SYNC_MINUTES
+    })
 
 
 @app.route("/health")
