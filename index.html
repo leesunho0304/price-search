@@ -21,12 +21,13 @@ body{
   border-bottom:1px solid var(--line);padding:8px 10px;
 }
 .headerInner{
-  max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 112px;gap:8px;align-items:center;
+  max-width:820px;margin:0 auto;display:grid;grid-template-columns:1fr 106px 72px;gap:8px;align-items:center;
 }
 h1{font-size:20px;margin:0;font-weight:900;white-space:nowrap}
 #storeSelect{
   height:36px;border:1px solid #d1d5db;border-radius:999px;background:#fff;font-size:12px;padding:0 8px;width:112px;
 }
+#syncBtn{height:36px;min-height:36px;border-radius:999px;background:var(--teal);font-size:12px;padding:0 8px}
 .container{max-width:820px;margin:0 auto;padding:10px}
 .status{font-size:12px;color:var(--muted);line-height:1.45;margin:0 2px 8px;word-break:keep-all}
 .modeRow{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px}.modeBtn{background:#f9fafb;color:#111827;border:1px solid var(--line);font-size:14px;min-height:42px}.modeBtn.active{background:#111827;color:#fff;border-color:#111827}.searchBox{background:#fff;border:1px solid var(--line);border-radius:18px;padding:10px;margin-bottom:10px}
@@ -66,7 +67,7 @@ button:disabled{opacity:.55}
 .empty{background:#fff;border:1px dashed #d1d5db;border-radius:18px;padding:22px;color:#6b7280;line-height:1.7}
 .highlight{background:#fff3a3;border-radius:4px}
 @media(max-width:430px){
-  .headerInner{grid-template-columns:1fr 106px}
+  .headerInner{grid-template-columns:1fr 98px 66px}
   h1{font-size:19px}
   .container{padding:8px}
   .mainSearchRow{grid-template-columns:1fr 68px}
@@ -82,6 +83,7 @@ button:disabled{opacity:.55}
   <div class="headerInner">
     <h1>🔎 가격검색</h1>
     <select id="storeSelect" title="내 매장"></select>
+    <button id="syncBtn" onclick="syncData()">동기화</button>
   </div>
 </header>
 
@@ -224,6 +226,30 @@ function clearSearch(){
   search();
   document.getElementById("q").focus();
 }
+
+function search(){
+  const raw=String(document.getElementById("q").value||"").trim();
+  const q=normalize(raw);
+  const start=document.getElementById("dateStart").value;
+  const end=document.getElementById("dateEnd").value;
+
+  let rows=DATA.filter(passMenu);
+
+  if(start) rows=rows.filter(item=>(item.inboundDate||"")>=start);
+  if(end) rows=rows.filter(item=>(item.inboundDate||"")<=end);
+
+  if(searchMode==="box"){
+    if(raw) rows=rows.filter(item=>String(item.boxNo||"").trim()===raw);
+    else if(!start&&!end) rows=rows.slice(0,80);
+  }else{
+    const tokens=q.split(/\s+/).filter(Boolean);
+    if(tokens.length) rows=rows.filter(item=>tokens.every(t=>normalize(item.search).includes(t)));
+    else if(!start&&!end) rows=rows.slice(0,80);
+  }
+
+  render(rows,q,{start,end,raw});
+}
+
 function render(rows,q,info={}){
   const results=document.getElementById("results");
   let extra="";
@@ -287,17 +313,26 @@ async function loadData(){
   }catch(err){document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";document.getElementById("results").innerHTML=`<div class="empty">데이터 파일이 없습니다.<br>동기화 버튼을 눌러 가격리스트를 불러오세요.</div>`}
 }
 async function syncData(){
-  const btns=[...document.querySelectorAll("button")].filter(b=>b.innerText.includes("동기화"));
-  btns.forEach(b=>{b.disabled=true;b.innerText="동기화중"});document.getElementById("status").innerHTML="가격리스트 동기화 중...";
-  try{const r=await fetch("/sync?ts="+Date.now());const res=await r.json();if(!res.ok)alert("동기화 실패: "+res.message);await loadData()}catch(e){alert("동기화 실패: "+e)}
-  finally{btns.forEach(b=>{b.disabled=false;b.innerText="동기화"})}
+  const btn=document.getElementById("syncBtn");
+  btn.disabled=true;
+  btn.innerText="동기화중";
+  document.getElementById("status").innerHTML="가격리스트 동기화 중...";
+  try{
+    const r=await fetch("/sync?ts="+Date.now());
+    const res=await r.json();
+    if(!res.ok) alert("동기화 실패: "+res.message);
+    await loadData();
+  }catch(e){
+    alert("동기화 실패: "+e);
+  }finally{
+    btn.disabled=false;
+    btn.innerText="동기화";
+  }
 }
 document.querySelectorAll(".chip").forEach(chip=>chip.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");currentMenu=chip.dataset.menu;search()}));
 document.getElementById("q").addEventListener("input",scheduleSearch);
 document.getElementById("dateStart").addEventListener("change",()=>{setActiveQuick(null);search()});
 document.getElementById("dateEnd").addEventListener("change",()=>{setActiveQuick(null);search()});
-document.getElementById("boxNoInput").addEventListener("input",search);
-
 initStore();loadData();
 </script>
 </body>
