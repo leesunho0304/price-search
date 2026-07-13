@@ -141,6 +141,161 @@ def extract_price_band(text):
     return ""
 
 
+
+def extract_price_amounts(text):
+    """
+    가격 셀 안의 금액 후보를 추출한다.
+    사이즈 150, 160 같은 숫자는 제외하고 1,000원 이상 금액만 사용한다.
+    """
+    text = clean_text(text)
+    if not text:
+        return []
+
+    found = re.findall(r"(?<!\d)(\d{1,3}(?:,\d{3})+|\d{4,6})(?!\d)", text)
+    amounts = []
+    for raw in found:
+        try:
+            value = int(raw.replace(",", ""))
+        except Exception:
+            continue
+        if 1000 <= value <= 999999:
+            amounts.append(value)
+
+    # 원문 순서를 유지하며 중복 제거
+    unique = []
+    for value in amounts:
+        if value not in unique:
+            unique.append(value)
+    return unique
+
+
+def build_price_info(price_raw, note=""):
+    """
+    가격을 숫자 하나로 억지 변환하지 않고 원문과 표시 방식을 함께 반환한다.
+
+    반환:
+    - price: 단일가격일 때만 숫자, 그 외 0
+    - price_type: single / range / discretion / multiple / attached / text / missing
+    - price_display: 카드에 표시할 짧은 문구
+    - price_raw: 시트의 가격 원문
+    - price_amounts: 원문에서 추출한 금액 목록
+    - show_detail: 가격 상세 펼침 표시 여부
+    """
+    raw = clean_text(price_raw)
+    note_text = clean_text(note)
+    combined = f"{raw}\n{note_text}".lower()
+    amounts = extract_price_amounts(raw)
+
+    if not raw:
+        return {
+            "price": 0,
+            "price_type": "missing",
+            "price_display": "가격 정보 없음",
+            "price_raw": "",
+            "price_amounts": [],
+            "show_detail": False,
+        }
+
+    # 숫자 하나만 적힌 단일 가격
+    numeric_text = raw.replace(",", "").replace("원", "").strip()
+    if re.fullmatch(r"\d+(?:\.0+)?", numeric_text):
+        try:
+            value = int(float(numeric_text))
+        except Exception:
+            value = 0
+        return {
+            "price": value,
+            "price_type": "single",
+            "price_display": f"{value:,}원" if value else raw,
+            "price_raw": raw,
+            "price_amounts": [value] if value else [],
+            "show_detail": False,
+        }
+
+    # 상품에 부착된 가격표를 확인해야 하는 경우
+    if "부착된 가격" in raw or "부착 가격" in raw:
+        return {
+            "price": 0,
+            "price_type": "attached",
+            "price_display": "상품 부착가 확인",
+            "price_raw": raw,
+            "price_amounts": amounts,
+            "show_detail": False,
+        }
+
+    # 매장/권역 재량 가격
+    if "재량" in combined:
+        if len(amounts) >= 2:
+            price_display = f"매장·권역 재량 · {min(amounts):,}~{max(amounts):,}원"
+        elif len(amounts) == 1:
+            price_display = f"매장·권역 재량 · {amounts[0]:,}원"
+        else:
+            price_display = "매장·권역 재량 가격"
+        return {
+            "price": 0,
+            "price_type": "discretion",
+            "price_display": price_display,
+            "price_raw": raw,
+            "price_amounts": amounts,
+            "show_detail": True,
+        }
+
+    # 줄바꿈과 상품별 설명이 있는 복합 가격
+    category_words = [
+        "슬리퍼", "샌들", "운동화", "구두", "워커", "로퍼", "가방",
+        "의류", "잡화", "아동", "성인", "티셔츠", "바지", "셔츠",
+        "블라우스", "원피스", "자켓", "점퍼", "사이즈", "size"
+    ]
+    has_category_lines = "\n" in raw and any(word in raw.lower() for word in category_words)
+
+    if has_category_lines or ("\n" in raw and len(amounts) >= 2):
+        return {
+            "price": 0,
+            "price_type": "multiple",
+            "price_display": "종류별 가격 · 상세보기",
+            "price_raw": raw,
+            "price_amounts": amounts,
+            "show_detail": True,
+        }
+
+    # 1,000 ~ 3,000 형태의 범위 가격
+    if len(amounts) >= 2 and any(mark in raw for mark in ["~", "～", "-", "–", "—"]):
+        return {
+            "price": 0,
+            "price_type": "range",
+            "price_display": f"{min(amounts):,}~{max(amounts):,}원",
+            "price_raw": raw,
+            "price_amounts": amounts,
+            "show_detail": True,
+        }
+
+    # 3,000 / 5,000 / 7,000 형태
+    if len(amounts) >= 2:
+        if len(amounts) <= 4:
+            display = " / ".join(f"{value:,}" for value in amounts) + "원"
+        else:
+            display = f"복수가격 · {min(amounts):,}~{max(amounts):,}원"
+        return {
+            "price": 0,
+            "price_type": "multiple",
+            "price_display": display,
+            "price_raw": raw,
+            "price_amounts": amounts,
+            "show_detail": True,
+        }
+
+    # 숫자 추출은 안 되지만 유효한 가격 안내 문구가 있는 경우
+    first_line = raw.splitlines()[0].strip()
+    short_text = first_line if len(first_line) <= 30 else first_line[:30] + "…"
+    return {
+        "price": 0,
+        "price_type": "text",
+        "price_display": short_text or "가격 상세 확인",
+        "price_raw": raw,
+        "price_amounts": amounts,
+        "show_detail": len(raw.splitlines()) > 1 or len(raw) > 30,
+    }
+
 def section_by_expiry(expiry):
     if not expiry:
         return "", "기한확인필요"
@@ -284,7 +439,13 @@ def parse_sheet(values, title, exceptions=None):
         if not expiry:
             expiry = normalize_date_text(f"{product} {note}", y)
 
-        price = to_number(price_raw)
+        price_info = build_price_info(price_raw, note)
+        price = price_info["price"]
+        price_type = price_info["price_type"]
+        price_display = price_info["price_display"]
+        price_amounts = price_info["price_amounts"]
+        show_price_detail = price_info["show_detail"]
+
         band = extract_price_band(price_raw) or extract_price_band(product) or extract_price_band(note)
         if not band and price:
             band = f"{round(price / 1000, 1):.1f}"
@@ -321,7 +482,7 @@ def parse_sheet(values, title, exceptions=None):
         elif exception_mode == "expiry":
             pass
 
-        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {expiry} {note} {barcode} {box_no} {store} {item_type} {exception_mode} {override_note}".lower()
+        search = f"{title} {inbound} {category_raw} {category} {product} {price} {band} {price_raw} {price_display} {expiry} {note} {barcode} {box_no} {store} {item_type} {exception_mode} {override_note}".lower()
 
         rows.append({
             "manage": manage,
@@ -331,6 +492,11 @@ def parse_sheet(values, title, exceptions=None):
             "product": product,
             "price": price,
             "priceBand": band,
+            "priceRaw": price_raw,
+            "priceType": price_type,
+            "priceDisplay": price_display,
+            "priceAmounts": price_amounts,
+            "showPriceDetail": show_price_detail,
             "inboundDate": inbound,
             "expiryDate": expiry,
             "daysLeft": days,
