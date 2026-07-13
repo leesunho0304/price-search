@@ -225,6 +225,42 @@ function clearSearch(){
   search();
   document.getElementById("q").focus();
 }
+
+function search(){
+  const raw=String(document.getElementById("q").value||"").trim();
+  const q=normalize(raw);
+  const start=document.getElementById("dateStart").value;
+  const end=document.getElementById("dateEnd").value;
+
+  let rows=DATA.filter(passMenu);
+
+  if(start){
+    rows=rows.filter(item=>(item.inboundDate||"")>=start);
+  }
+  if(end){
+    rows=rows.filter(item=>(item.inboundDate||"")<=end);
+  }
+
+  if(searchMode==="box"){
+    if(raw){
+      rows=rows.filter(item=>String(item.boxNo||"").trim()===raw);
+    }else if(!start&&!end){
+      rows=rows.slice(0,80);
+    }
+  }else{
+    const tokens=q.split(/\s+/).filter(Boolean);
+    if(tokens.length){
+      rows=rows.filter(item=>
+        tokens.every(token=>normalize(item.search||"").includes(token))
+      );
+    }else if(!start&&!end){
+      rows=rows.slice(0,80);
+    }
+  }
+
+  render(rows,q,{start,end,raw});
+}
+
 function render(rows,q,info={}){
   const results=document.getElementById("results");
   let extra="";
@@ -291,21 +327,76 @@ async function setStoreException(itemKeyEncoded,mode){
 }
 async function loadData(){
   try{
-    const r=await fetch("search_data.json?ts="+Date.now());const data=await r.json();
-    META=data;RAW_DATA=data.items||[];await loadStoreOverrides();updateStatus();search();
-  }catch(err){document.getElementById("status").innerHTML="데이터 없음. 동기화를 눌러주세요.";document.getElementById("results").innerHTML=`<div class="empty">데이터 파일이 없습니다.<br>동기화 버튼을 눌러 가격리스트를 불러오세요.</div>`}
+    const response=await fetch("search_data.json?ts="+Date.now());
+
+    if(!response.ok){
+      throw new Error(`데이터 요청 실패 (${response.status})`);
+    }
+
+    const data=await response.json();
+
+    if(!data || !Array.isArray(data.items)){
+      throw new Error("데이터 형식이 올바르지 않습니다.");
+    }
+
+    META=data;
+    RAW_DATA=data.items;
+    await loadStoreOverrides();
+    updateStatus();
+    search();
+  }catch(err){
+    console.error(err);
+    document.getElementById("status").innerHTML=
+      `데이터 불러오기 실패: <b>${escapeHtml(err.message||String(err))}</b>`;
+    document.getElementById("results").innerHTML=
+      `<div class="empty">데이터를 표시하지 못했습니다.<br>동기화 후에도 계속되면 새로고침해 주세요.</div>`;
+  }
 }
 async function syncData(){
   const btn=document.getElementById("syncBtn");
-  if(btn){btn.disabled=true;btn.innerText="동기화중";}
+
+  if(btn){
+    btn.disabled=true;
+    btn.innerText="동기화중";
+  }
+
   document.getElementById("status").innerHTML="가격리스트 동기화 중...";
+
   try{
-    const r=await fetch("/sync?ts="+Date.now());
-    const res=await r.json();
-    if(!res.ok){alert("동기화 실패: "+res.message);return;}
+    const response=await fetch("/sync?ts="+Date.now());
+    const res=await response.json();
+
+    if(!response.ok || !res.ok){
+      throw new Error(res.message||`동기화 요청 실패 (${response.status})`);
+    }
+
+    const count=Number(res.data?.count||0);
+    const failed=res.data?.failedSheets||[];
+
+    if(count===0){
+      const failedText=failed.length
+        ? failed.map(x=>escapeHtml(x)).join("<br>")
+        : "2025년·2026년 가격 시트에서 읽힌 상품이 없습니다.";
+
+      document.getElementById("status").innerHTML=
+        `동기화는 완료됐지만 상품이 <b>0건</b>입니다.`;
+      document.getElementById("results").innerHTML=
+        `<div class="empty">${failedText}</div>`;
+      return;
+    }
+
     await loadData();
-  }catch(e){alert("동기화 실패: "+e)}
-  finally{if(btn){btn.disabled=false;btn.innerText="동기화";}}
+  }catch(err){
+    console.error(err);
+    alert("동기화 실패: "+(err.message||String(err)));
+    document.getElementById("status").innerHTML=
+      `동기화 실패: <b>${escapeHtml(err.message||String(err))}</b>`;
+  }finally{
+    if(btn){
+      btn.disabled=false;
+      btn.innerText="동기화";
+    }
+  }
 }
 document.querySelectorAll(".chip").forEach(chip=>chip.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");currentMenu=chip.dataset.menu;search()}));
 document.getElementById("q").addEventListener("input",scheduleSearch);
