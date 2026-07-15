@@ -2,9 +2,10 @@
 import os
 import json
 import re
+import io
 from datetime import datetime, date
 from pathlib import Path
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, send_file, request
 
 PRICE_SPREADSHEET_ID = "1l1qub-I2zuLKLDP2RJFGiDNTIBuGEAxI7PTxIDmfYi4"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -313,6 +314,8 @@ def section_by_expiry(expiry):
         sec = "30일이내"
     elif days <= 60:
         sec = "60일이내"
+    elif days <= 90:
+        sec = "90일이내"
     elif days >= 180:
         sec = "장기재고"
     else:
@@ -829,6 +832,248 @@ def get_store_overrides(store_name):
             base_key = key[len(prefix):]
             result[base_key] = value
     return jsonify({"ok": True, "store": store_name, "overrides": result})
+
+
+
+def apply_store_override_to_export(item, store_name, exceptions):
+    """엑셀 다운로드 시 선택 매장의 수정 유통기한을 반영한다."""
+    row = dict(item)
+    store_name = clean_text(store_name)
+    if not store_name:
+        return row
+
+    override_key = f"STORE|{store_name}|{row.get('itemKey', '')}"
+    override = exceptions.get(override_key, {})
+    expiry_date = clean_text(override.get("expiryDate", ""))
+
+    if expiry_date:
+        row["expiryDate"] = expiry_date
+        days, section = section_by_expiry(expiry_date)
+        row["daysLeft"] = days
+        row["section"] = section
+        row["manage"] = "유통기한관리"
+        row["storeOverride"] = True
+
+    mode = clean_text(override.get("mode", ""))
+    if mode == "manufacture" and not expiry_date:
+        row["manage"] = "기한확인필요"
+        row["section"] = "기한확인필요"
+        row["daysLeft"] = ""
+        row["storeOverride"] = True
+    elif mode == "exclude" and not expiry_date:
+        row["manage"] = "비관리대상"
+        row["section"] = "기한관리제외"
+        row["daysLeft"] = ""
+        row["storeOverride"] = True
+
+    return row
+
+
+def export_menu_match(item, menu):
+    if not menu or menu == "전체상품":
+        return True
+    if menu == "유통기한관리":
+        return item.get("manage") == "유통기한관리"
+    if menu == "기한확인필요":
+        return item.get("manage") == "기한확인필요"
+    if menu == "비관리대상":
+        return item.get("manage") == "비관리대상"
+    return item.get("section") == menu
+
+
+@app.route("/download_excel")
+def download_excel():
+    """
+    현재 화면의 검색어·날짜·분류·선택 매장을 반영한 취합 리스트를 엑셀로 내려준다.
+    필터가 없으면 전체 가격리스트가 다운로드된다.
+    """
+    try:
+        if not Path(DATA_FILE).exists():
+            sync_data()
+
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            source = json.load(f)
+
+        items = source.get("items", [])
+        exceptions = load_exceptions()
+
+        search_mode = clean_text(request.args.get("mode", "product"))
+        query = clean_text(request.args.get("q", ""))
+        date_start = clean_text(request.args.get("start", ""))
+        date_end = clean_text(request.args.get("end", ""))
+        menu = clean_text(request.args.get("menu", "전체상품"))
+        store_name = clean_text(request.args.get("store", ""))
+
+        filtered = []
+        tokens = [x for x in query.lower().split() if x]
+
+        for original in items:
+            item = apply_store_override_to_export(original, store_name, exceptions)
+
+            inbound = clean_text(item.get("inboundDate", ""))
+            if date_start and inbound < date_start:
+                continue
+            if date_end and inbound > date_end:
+                continue
+            if not export_menu_match(item, menu):
+                continue
+
+            if query:
+                if search_mode == "box":
+                    if clean_text(item.get("boxNo", "")) != query:
+                        continue
+                else:
+                    search_text = clean_text(item.get("search", "")).lower()
+                    if not all(token in search_text for token in tokens):
+                        continue
+
+            filtered.append(item)
+
+        import xlsxwriter
+
+        output = io.BytesIO()
+        workbook = xlsxwriter.Workbook(output, {"in_memory": True})
+        sheet = workbook.add_worksheet("취합리스트")
+
+        title_fmt = workbook.add_format({
+            "bold": True, "font_size": 15, "font_color": "#FFFFFF",
+            "bg_color": "#0F766E", "align": "center", "valign": "vcenter"
+        })
+        info_fmt = workbook.add_format({
+            "font_color": "#475569", "bg_color": "#F1F5F9",
+            "align": "left", "valign": "vcenter"
+        })
+        header_fmt = workbook.add_format({
+            "bold": True, "font_color": "#FFFFFF", "bg_color": "#111827",
+            "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True
+        })
+        text_fmt = workbook.add_format({
+            "border": 1, "valign": "top", "text_wrap": True
+        })
+        center_fmt = workbook.add_format({
+            "border": 1, "align": "center", "valign": "top", "text_wrap": True
+        })
+        date_fmt = workbook.add_format({
+            "border": 1, "align": "center", "valign": "top",
+            "num_format": "yyyy-mm-dd"
+        })
+        expired_fmt = workbook.add_format({
+            "border": 1, "align": "center", "valign": "top",
+            "bg_color": "#FEE2E2", "font_color": "#B91C1C"
+        })
+        warning_fmt = workbook.add_format({
+            "border": 1, "align": "center", "valign": "top",
+            "bg_color": "#FEF3C7", "font_color": "#92400E"
+        })
+
+        headers = [
+            "입고일", "박스번호", "형태", "대분류", "상품명",
+            "가격 표시", "가격 원문", "바코드", "유통기한",
+            "남은 일수", "유통기한 구간", "관리 구분",
+            "배분매장", "비고", "원본 시트", "행번호"
+        ]
+
+        sheet.merge_range(0, 0, 0, len(headers) - 1, "가격리스트 취합 내역", title_fmt)
+
+        filter_parts = []
+        if store_name:
+            filter_parts.append(f"매장: {store_name}")
+        if query:
+            filter_parts.append(f"검색: {query}")
+        if date_start or date_end:
+            filter_parts.append(f"입고일: {date_start or '전체'} ~ {date_end or '전체'}")
+        if menu and menu != "전체상품":
+            filter_parts.append(f"분류: {menu}")
+        filter_text = " | ".join(filter_parts) if filter_parts else "전체 리스트"
+        sheet.merge_range(
+            1, 0, 1, len(headers) - 1,
+            f"{filter_text} | 총 {len(filtered):,}건 | 생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            info_fmt
+        )
+
+        for col, header in enumerate(headers):
+            sheet.write(2, col, header, header_fmt)
+
+        for row_idx, item in enumerate(filtered, start=3):
+            days = item.get("daysLeft", "")
+            section = clean_text(item.get("section", ""))
+            expiry_format = center_fmt
+            if section == "만료":
+                expiry_format = expired_fmt
+            elif section in ["7일이내", "30일이내", "60일이내", "90일이내"]:
+                expiry_format = warning_fmt
+
+            values = [
+                clean_text(item.get("inboundDate", "")),
+                clean_text(item.get("boxNo", "")),
+                clean_text(item.get("type", "")),
+                clean_text(item.get("category", "")),
+                clean_text(item.get("product", "")),
+                clean_text(item.get("priceDisplay", "")),
+                clean_text(item.get("priceRaw", "")),
+                clean_text(item.get("barcode", "")),
+                clean_text(item.get("expiryDate", "")),
+                days,
+                section,
+                clean_text(item.get("manage", "")),
+                clean_text(item.get("store", "")),
+                clean_text(item.get("note", "")),
+                clean_text(item.get("sheet", "")),
+                item.get("row", ""),
+            ]
+
+            for col, value in enumerate(values):
+                fmt = text_fmt
+                if col in [0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 15]:
+                    fmt = center_fmt
+                if col in [8, 9, 10]:
+                    fmt = expiry_format
+                sheet.write(row_idx, col, value, fmt)
+
+        widths = [12, 10, 11, 12, 30, 22, 38, 18, 12, 10, 14, 14, 18, 34, 14, 8]
+        for idx, width in enumerate(widths):
+            sheet.set_column(idx, idx, width)
+
+        sheet.set_row(0, 28)
+        sheet.set_row(1, 24)
+        sheet.set_row(2, 30)
+        sheet.freeze_panes(3, 0)
+        sheet.autofilter(2, 0, max(2, len(filtered) + 2), len(headers) - 1)
+
+        # 유통기한 요약 시트
+        summary = workbook.add_worksheet("유통기한요약")
+        summary_headers = ["구간", "건수"]
+        summary.write_row(0, 0, summary_headers, header_fmt)
+
+        summary_order = [
+            "만료", "7일이내", "30일이내", "60일이내",
+            "90일이내", "전체", "기한확인필요", "기한관리제외"
+        ]
+        counts = {}
+        for item in filtered:
+            key = clean_text(item.get("section", "")) or "기타"
+            counts[key] = counts.get(key, 0) + 1
+
+        for idx, key in enumerate(summary_order, start=1):
+            summary.write(idx, 0, key, text_fmt)
+            summary.write_number(idx, 1, counts.get(key, 0), center_fmt)
+
+        summary.set_column(0, 0, 20)
+        summary.set_column(1, 1, 12)
+        summary.freeze_panes(1, 0)
+
+        workbook.close()
+        output.seek(0)
+
+        filename = f"가격리스트_취합_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 500
 
 
 @app.route("/health")

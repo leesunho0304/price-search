@@ -36,10 +36,10 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 #q:focus,input:focus,select:focus{border-color:var(--blue)}
 button{border:0;border-radius:16px;padding:0 12px;background:var(--dark);color:#fff;font-weight:900;font-size:14px;min-height:44px;cursor:pointer}
 button:disabled{opacity:.55}
-.detailToggle{width:100%;background:#f9fafb;color:#111827;border:1px solid var(--line);min-height:40px}
+.actionRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.downloadBtn{background:#2563eb;color:#fff;border:0}.detailToggle{width:100%;background:#f9fafb;color:#111827;border:1px solid var(--line);min-height:40px}
 .detailArea{margin-top:8px}
 .hidden{display:none}
-.quickRow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:8px}
+.quickRow{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}
 .quickBtn{background:#f9fafb;color:#111827;border:1px solid var(--line);font-size:13px;min-height:40px}
 .quickBtn.active{background:#111827;color:#fff;border-color:#111827}
 .filterGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
@@ -99,9 +99,13 @@ button:disabled{opacity:.55}
     <input id="q" type="search" placeholder="상품명을 입력하세요" autocomplete="off">
     <button onclick="clearSearch()">초기화</button>
   </div>
-  <button class="detailToggle" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
+  <div class="actionRow">
+    <button class="detailToggle" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
+    <button class="downloadBtn" onclick="downloadExcel()">취합 엑셀</button>
+  </div>
   <div class="detailArea hidden" id="detailArea">
     <div class="quickRow">
+      <button class="quickBtn active" id="allBtn" onclick="setQuickDate('all')">전체리스트</button>
       <button class="quickBtn" id="todayBtn" onclick="setQuickDate('today')">오늘</button>
       <button class="quickBtn" id="yesterdayBtn" onclick="setQuickDate('yesterday')">어제</button>
       <button class="quickBtn" id="recentBtn" onclick="setQuickDate('recent7')">최근7일</button>
@@ -119,7 +123,8 @@ button:disabled{opacity:.55}
     <span class="chip" data-menu="만료">만료</span>
     <span class="chip" data-menu="7일이내">7일</span>
     <span class="chip" data-menu="30일이내">30일</span>
-    <span class="chip" data-menu="60일이내">60일</span>
+    <span class="chip" data-menu="60일이내">2개월</span>
+    <span class="chip" data-menu="90일이내">3개월</span>
     <span class="chip" data-menu="장기재고">장기</span>
     <span class="chip" data-menu="기한확인필요">기한확인</span>
     <span class="chip" data-menu="비관리대상">비관리</span>
@@ -133,7 +138,7 @@ button:disabled{opacity:.55}
 
 <script>
 const STORES=["영등포","서원","양재","당산","상계","수서","가양","석촌","강남","마곡","신대방3","가락","먹골","흑석","노원","녹번","왕십리","부평","하계","평택안중","대구","수원","갈산","답십리","선유도","석계","성남태평","인천논현","구로구청"];
-let DATA=[], RAW_DATA=[], META={}, currentMenu="전체상품", STORE_OVERRIDES={}, searchMode="product", searchTimer=null;
+let DATA=[], RAW_DATA=[], META={}, currentMenu="전체상품", STORE_OVERRIDES={}, searchMode="product", searchTimer=null, showAllList=true, visibleLimit=150, lastRows=[];
 
 function pad(n){return String(n).padStart(2,"0")}
 function formatDate(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}
@@ -165,7 +170,7 @@ function applyStoreOverrides(items){
       x.expiryDate=o.expiryDate;
       const diff=Math.floor((new Date(o.expiryDate)-new Date(todayStr()))/(1000*60*60*24));
       x.daysLeft=diff;x.manage="유통기한관리";
-      if(diff<0)x.section="만료"; else if(diff<=7)x.section="7일이내"; else if(diff<=30)x.section="30일이내"; else if(diff<=60)x.section="60일이내"; else if(diff>=180)x.section="장기재고"; else x.section="전체";
+      if(diff<0)x.section="만료"; else if(diff<=7)x.section="7일이내"; else if(diff<=30)x.section="30일이내"; else if(diff<=60)x.section="60일이내"; else if(diff<=90)x.section="90일이내"; else if(diff>=180)x.section="장기재고"; else x.section="전체";
       x.search=(x.search||"")+" "+o.expiryDate+" store_override";
     }
     return x;
@@ -188,12 +193,32 @@ function toggleDetail(){
   area.classList.toggle("hidden");
   btn.innerText=area.classList.contains("hidden")?"세부검색 펼치기":"세부검색 접기";
 }
-function setActiveQuick(id){["todayBtn","yesterdayBtn","recentBtn"].forEach(x=>document.getElementById(x).classList.remove("active"));if(id)document.getElementById(id).classList.add("active")}
+function setActiveQuick(id){["allBtn","todayBtn","yesterdayBtn","recentBtn"].forEach(x=>document.getElementById(x).classList.remove("active"));if(id)document.getElementById(id).classList.add("active")}
 function setQuickDate(type){
   const s=document.getElementById("dateStart"),e=document.getElementById("dateEnd");
-  if(type==="today"){s.value=todayStr();e.value=todayStr();setActiveQuick("todayBtn")}
-  if(type==="yesterday"){s.value=yesterdayStr();e.value=yesterdayStr();setActiveQuick("yesterdayBtn")}
-  if(type==="recent7"){s.value=recent7Start();e.value=todayStr();setActiveQuick("recentBtn")}
+  showAllList=(type==="all");
+  visibleLimit=150;
+
+  if(type==="all"){
+    s.value="";
+    e.value="";
+    setActiveQuick("allBtn");
+  }
+  if(type==="today"){
+    s.value=todayStr();
+    e.value=todayStr();
+    setActiveQuick("todayBtn");
+  }
+  if(type==="yesterday"){
+    s.value=yesterdayStr();
+    e.value=yesterdayStr();
+    setActiveQuick("yesterdayBtn");
+  }
+  if(type==="recent7"){
+    s.value=recent7Start();
+    e.value=todayStr();
+    setActiveQuick("recentBtn");
+  }
   search();
 }
 function setSearchMode(mode){
@@ -221,7 +246,9 @@ function clearSearch(){
   document.getElementById("q").value="";
   document.getElementById("dateStart").value="";
   document.getElementById("dateEnd").value="";
-  setActiveQuick(null);
+  showAllList=true;
+  visibleLimit=150;
+  setActiveQuick("allBtn");
   search();
   document.getElementById("q").focus();
 }
@@ -244,7 +271,7 @@ function search(){
   if(searchMode==="box"){
     if(raw){
       rows=rows.filter(item=>String(item.boxNo||"").trim()===raw);
-    }else if(!start&&!end){
+    }else if(!start&&!end&&!showAllList){
       rows=rows.slice(0,80);
     }
   }else{
@@ -253,7 +280,7 @@ function search(){
       rows=rows.filter(item=>
         tokens.every(token=>normalize(item.search||"").includes(token))
       );
-    }else if(!start&&!end){
+    }else if(!start&&!end&&!showAllList){
       rows=rows.slice(0,80);
     }
   }
@@ -267,9 +294,12 @@ function render(rows,q,info={}){
   if(info.start||info.end)extra+=` · 날짜 ${escapeHtml(info.start||"")}~${escapeHtml(info.end||"")}`;
   if(searchMode==="box"&&info.raw)extra+=` · 박스 ${escapeHtml(info.raw)}`;
   if(getStore())extra+=` · 내 매장 ${escapeHtml(getStore())}`;
-  const heading=searchMode==="box"&&info.raw?`📦 ${escapeHtml(info.raw)}번 박스 · <b>${rows.length.toLocaleString()}</b>건`:`검색 결과 <b>${rows.length.toLocaleString()}</b>건`; document.getElementById("count").innerHTML=`${heading}${extra}`+(rows.length>150?" · 상위 150건 표시":"");
+  lastRows=rows;
+  const heading=searchMode==="box"&&info.raw?`📦 ${escapeHtml(info.raw)}번 박스 · <b>${rows.length.toLocaleString()}</b>건`:`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;
+  const shown=Math.min(rows.length,visibleLimit);
+  document.getElementById("count").innerHTML=`${heading}${extra}`+(rows.length>shown?` · ${shown.toLocaleString()}건 표시`:"");
   if(!rows.length){results.innerHTML=`<div class="empty">결과가 없습니다.<br>검색어, 날짜, 박스번호를 확인해 주세요.</div>`;return}
-  results.innerHTML=rows.slice(0,150).map(item=>{
+  results.innerHTML=rows.slice(0,visibleLimit).map(item=>{
     const priceText=item.priceDisplay || (item.price?won(item.price):(item.priceBand?item.priceBand:"가격 정보 없음"));
     const priceRaw=String(item.priceRaw||"").trim();
     const showPriceDetail=Boolean(item.showPriceDetail && priceRaw);
@@ -311,8 +341,32 @@ function render(rows,q,info={}){
       </div>
     </div>`;
   }).join("");
+
+  if(rows.length>visibleLimit){
+    results.insertAdjacentHTML("beforeend",
+      `<button style="width:100%;margin:4px 0 14px" onclick="loadMore()">더보기 (${Math.min(150,rows.length-visibleLimit).toLocaleString()}건)</button>`
+    );
+  }
+}
+function loadMore(){
+  visibleLimit+=150;
+  search();
 }
 function hashCode(str){let h=0;for(let i=0;i<str.length;i++){h=((h<<5)-h)+str.charCodeAt(i);h|=0}return h}
+
+function downloadExcel(){
+  const params=new URLSearchParams();
+  params.set("mode",searchMode);
+  params.set("q",String(document.getElementById("q").value||"").trim());
+  params.set("start",document.getElementById("dateStart").value||"");
+  params.set("end",document.getElementById("dateEnd").value||"");
+  params.set("menu",currentMenu);
+  params.set("store",getStore());
+
+  const url="/download_excel?"+params.toString();
+  window.location.href=url;
+}
+
 async function saveStoreExpiry(itemKeyEncoded,inputId){
   const store=getStore();if(!store){alert("오른쪽 상단에서 내 매장을 선택해 주세요.");document.getElementById("storeSelect").focus();return}
   const value=document.getElementById(inputId).value;if(!value){alert("유통기한을 선택해 주세요.");return}
@@ -400,10 +454,10 @@ async function syncData(){
 }
 document.querySelectorAll(".chip").forEach(chip=>chip.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");currentMenu=chip.dataset.menu;search()}));
 document.getElementById("q").addEventListener("input",scheduleSearch);
-document.getElementById("dateStart").addEventListener("change",()=>{setActiveQuick(null);search()});
-document.getElementById("dateEnd").addEventListener("change",()=>{setActiveQuick(null);search()});
+document.getElementById("dateStart").addEventListener("change",()=>{showAllList=false;visibleLimit=150;setActiveQuick(null);search()});
+document.getElementById("dateEnd").addEventListener("change",()=>{showAllList=false;visibleLimit=150;setActiveQuick(null);search()});
 
-initStore();loadData();
+setActiveQuick("allBtn");initStore();loadData();
 </script>
 </body>
 </html>
