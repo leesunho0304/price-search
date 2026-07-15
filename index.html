@@ -36,7 +36,7 @@ input,select{width:100%;border:1px solid #d1d5db;border-radius:14px;padding:12px
 #q:focus,input:focus,select:focus{border-color:var(--blue)}
 button{border:0;border-radius:16px;padding:0 12px;background:var(--dark);color:#fff;font-weight:900;font-size:14px;min-height:44px;cursor:pointer}
 button:disabled{opacity:.55}
-.actionRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.downloadBtn{background:#2563eb;color:#fff;border:0}.detailToggle{width:100%;background:#f9fafb;color:#111827;border:1px solid var(--line);min-height:40px}
+.actionRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.downloadBtn{background:#2563eb;color:#fff;border:0;font-size:12px;line-height:1.25;padding:6px 8px;white-space:normal}.detailToggle{width:100%;background:#f9fafb;color:#111827;border:1px solid var(--line);min-height:40px}
 .detailArea{margin-top:8px}
 .hidden{display:none}
 .quickRow{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:8px}
@@ -101,7 +101,7 @@ button:disabled{opacity:.55}
   </div>
   <div class="actionRow">
     <button class="detailToggle" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
-    <button class="downloadBtn" onclick="downloadExcel()">취합 엑셀</button>
+    <button class="downloadBtn" onclick="downloadExcel()">가격 인하 요청서 엑셀 다운로드</button>
   </div>
   <div class="detailArea hidden" id="detailArea">
     <div class="quickRow">
@@ -379,34 +379,85 @@ async function setStoreException(itemKeyEncoded,mode){
   if(!confirm(`${store} 매장 기준으로 이 행을 [${label}] 처리할까요?`))return;
   try{const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${itemKeyEncoded}/${mode}?ts=`+Date.now());const res=await r.json();if(!res.ok){alert("설정 실패: "+res.message);return}alert("설정 저장 완료");await loadData()}catch(e){alert("설정 실패: "+e)}
 }
-async function loadData(){
-  try{
-    const response=await fetch("search_data.json?ts="+Date.now());
-
-    if(!response.ok){
-      throw new Error(`데이터 요청 실패 (${response.status})`);
-    }
-
-    const data=await response.json();
-
-    if(!data || !Array.isArray(data.items)){
-      throw new Error("데이터 형식이 올바르지 않습니다.");
-    }
-
-    META=data;
-    RAW_DATA=data.items;
-    await loadStoreOverrides();
-    updateStatus();
-    search();
-  }catch(err){
-    console.error(err);
-    document.getElementById("status").innerHTML=
-      `데이터 불러오기 실패: <b>${escapeHtml(err.message||String(err))}</b>`;
-    document.getElementById("results").innerHTML=
-      `<div class="empty">데이터를 표시하지 못했습니다.<br>동기화 후에도 계속되면 새로고침해 주세요.</div>`;
-  }
+function sleep(ms){
+  return new Promise(resolve=>setTimeout(resolve,ms));
 }
-async function syncData(){
+
+async function fetchSearchData(){
+  const response=await fetch("search_data.json?ts="+Date.now(),{
+    cache:"no-store"
+  });
+
+  if(!response.ok){
+    let message=`데이터 요청 실패 (${response.status})`;
+    try{
+      const errorData=await response.json();
+      if(errorData && errorData.message) message=errorData.message;
+    }catch(e){}
+    throw new Error(message);
+  }
+
+  const data=await response.json();
+
+  if(!data || !Array.isArray(data.items)){
+    throw new Error("데이터 형식이 올바르지 않습니다.");
+  }
+
+  return data;
+}
+
+async function loadData(options={}){
+  const autoRecover=options.autoRecover!==false;
+  const maxAttempts=3;
+  let lastError=null;
+
+  for(let attempt=1;attempt<=maxAttempts;attempt++){
+    try{
+      if(attempt>1){
+        document.getElementById("status").innerHTML=
+          `서버 준비 중... 자동 재시도 <b>${attempt}/${maxAttempts}</b>`;
+      }
+
+      const data=await fetchSearchData();
+      META=data;
+      RAW_DATA=data.items||[];
+      await loadStoreOverrides();
+      updateStatus();
+      search();
+      return true;
+    }catch(err){
+      lastError=err;
+      console.error(`데이터 로딩 ${attempt}차 실패`,err);
+
+      if(attempt<maxAttempts){
+        await sleep(attempt*1200);
+      }
+    }
+  }
+
+  if(autoRecover){
+    document.getElementById("status").innerHTML=
+      "데이터를 자동으로 준비하고 있습니다...";
+
+    const synced=await syncData({
+      silent:true,
+      reloadAfter:false
+    });
+
+    if(synced){
+      return await loadData({autoRecover:false});
+    }
+  }
+
+  document.getElementById("status").innerHTML=
+    `데이터 불러오기 실패: <b>${escapeHtml(lastError?.message||String(lastError||"알 수 없는 오류"))}</b>`;
+  document.getElementById("results").innerHTML=
+    `<div class="empty">자동 동기화와 재시도를 완료했지만 데이터를 불러오지 못했습니다.<br>잠시 후 새로고침해 주세요.</div>`;
+  return false;
+}
+async function syncData(options={}){
+  const silent=Boolean(options.silent);
+  const reloadAfter=options.reloadAfter!==false;
   const btn=document.getElementById("syncBtn");
 
   if(btn){
@@ -414,10 +465,13 @@ async function syncData(){
     btn.innerText="동기화중";
   }
 
-  document.getElementById("status").innerHTML="가격리스트 동기화 중...";
+  document.getElementById("status").innerHTML=
+    silent ? "가격리스트 자동 동기화 중..." : "가격리스트 동기화 중...";
 
   try{
-    const response=await fetch("/sync?ts="+Date.now());
+    const response=await fetch("/sync?ts="+Date.now(),{
+      cache:"no-store"
+    });
     const res=await response.json();
 
     if(!response.ok || !res.ok){
@@ -436,15 +490,26 @@ async function syncData(){
         `동기화는 완료됐지만 상품이 <b>0건</b>입니다.`;
       document.getElementById("results").innerHTML=
         `<div class="empty">${failedText}</div>`;
-      return;
+      return false;
     }
 
-    await loadData();
+    localStorage.setItem("lastSuccessfulSyncDate",todayStr());
+
+    if(reloadAfter){
+      await loadData({autoRecover:false});
+    }
+
+    return true;
   }catch(err){
     console.error(err);
-    alert("동기화 실패: "+(err.message||String(err)));
+
+    if(!silent){
+      alert("동기화 실패: "+(err.message||String(err)));
+    }
+
     document.getElementById("status").innerHTML=
       `동기화 실패: <b>${escapeHtml(err.message||String(err))}</b>`;
+    return false;
   }finally{
     if(btn){
       btn.disabled=false;
@@ -452,12 +517,34 @@ async function syncData(){
     }
   }
 }
+
+async function startApp(){
+  initStore();
+
+  // 같은 휴대폰에서는 날짜가 바뀐 첫 실행에 자동 동기화한다.
+  // 서버가 막 켜진 경우에는 loadData가 최대 3회 재시도한 뒤 자동 복구한다.
+  const lastSyncDate=localStorage.getItem("lastSuccessfulSyncDate")||"";
+
+  if(lastSyncDate!==todayStr()){
+    const synced=await syncData({
+      silent:true,
+      reloadAfter:false
+    });
+
+    if(!synced){
+      await loadData();
+      return;
+    }
+  }
+
+  await loadData();
+}
 document.querySelectorAll(".chip").forEach(chip=>chip.addEventListener("click",()=>{document.querySelectorAll(".chip").forEach(c=>c.classList.remove("active"));chip.classList.add("active");currentMenu=chip.dataset.menu;search()}));
 document.getElementById("q").addEventListener("input",scheduleSearch);
 document.getElementById("dateStart").addEventListener("change",()=>{showAllList=false;visibleLimit=150;setActiveQuick(null);search()});
 document.getElementById("dateEnd").addEventListener("change",()=>{showAllList=false;visibleLimit=150;setActiveQuick(null);search()});
 
-setActiveQuick("allBtn");initStore();loadData();
+setActiveQuick("allBtn");startApp();
 </script>
 </body>
 </html>

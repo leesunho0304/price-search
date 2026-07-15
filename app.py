@@ -588,6 +588,7 @@ def index():
 @app.route("/search_data.json")
 def data():
     should_sync = not Path(DATA_FILE).exists()
+    sync_error = ""
 
     if not should_sync:
         try:
@@ -603,10 +604,18 @@ def data():
     if should_sync:
         try:
             sync_data()
-        except Exception:
-            pass
+        except Exception as e:
+            sync_error = str(e)
 
-    return send_from_directory(".", DATA_FILE)
+    if Path(DATA_FILE).exists():
+        response = send_from_directory(".", DATA_FILE)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return response
+
+    return jsonify({
+        "ok": False,
+        "message": sync_error or "가격리스트 데이터를 생성하지 못했습니다."
+    }), 503
 
 
 @app.route("/sync")
