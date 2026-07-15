@@ -936,58 +936,88 @@ def download_excel():
         sheet = workbook.add_worksheet("취합리스트")
 
         title_fmt = workbook.add_format({
-            "bold": True, "font_size": 15, "font_color": "#FFFFFF",
-            "bg_color": "#0F766E", "align": "center", "valign": "vcenter"
+            "bold": True,
+            "font_size": 16,
+            "font_color": "#FFFFFF",
+            "bg_color": "#147D73",
+            "align": "center",
+            "valign": "vcenter",
         })
         info_fmt = workbook.add_format({
-            "font_color": "#475569", "bg_color": "#F1F5F9",
-            "align": "left", "valign": "vcenter"
+            "font_color": "#334155",
+            "bg_color": "#F1F5F9",
+            "align": "left",
+            "valign": "vcenter",
         })
         header_fmt = workbook.add_format({
-            "bold": True, "font_color": "#FFFFFF", "bg_color": "#111827",
-            "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True
+            "bold": True,
+            "font_color": "#FFFFFF",
+            "bg_color": "#111827",
+            "border": 1,
+            "align": "center",
+            "valign": "vcenter",
+            "text_wrap": True,
         })
         text_fmt = workbook.add_format({
-            "border": 1, "valign": "top", "text_wrap": True
+            "border": 1,
+            "valign": "top",
+            "text_wrap": True,
         })
         center_fmt = workbook.add_format({
-            "border": 1, "align": "center", "valign": "top", "text_wrap": True
+            "border": 1,
+            "align": "center",
+            "valign": "top",
+            "text_wrap": True,
         })
-        date_fmt = workbook.add_format({
-            "border": 1, "align": "center", "valign": "top",
-            "num_format": "yyyy-mm-dd"
+        discount_input_fmt = workbook.add_format({
+            "border": 1,
+            "align": "center",
+            "valign": "top",
+            "text_wrap": True,
         })
-        expired_fmt = workbook.add_format({
-            "border": 1, "align": "center", "valign": "top",
-            "bg_color": "#FEE2E2", "font_color": "#B91C1C"
+        expiry_fmt = workbook.add_format({
+            "border": 1,
+            "align": "center",
+            "valign": "top",
+            "bg_color": "#FFF2CC",
+            "font_color": "#C65911",
+            "num_format": "yyyy-mm-dd",
         })
-        warning_fmt = workbook.add_format({
-            "border": 1, "align": "center", "valign": "top",
-            "bg_color": "#FEF3C7", "font_color": "#92400E"
+        days_fmt = workbook.add_format({
+            "border": 1,
+            "align": "center",
+            "valign": "top",
+            "bg_color": "#FFF2CC",
+            "font_color": "#C65911",
         })
 
         headers = [
-            "입고일", "박스번호", "형태", "대분류", "상품명",
-            "가격 표시", "가격 원문", "바코드", "유통기한",
-            "남은 일수", "유통기한 구간", "관리 구분",
-            "배분매장", "비고", "원본 시트", "행번호"
+            "형태",
+            "대분류",
+            "상품명",
+            "가격 원문",
+            "인하 가격",
+            "유통기한",
+            "남은 일수",
         ]
 
-        sheet.merge_range(0, 0, 0, len(headers) - 1, "가격리스트 취합 내역", title_fmt)
+        sheet.merge_range(
+            0, 0, 0, len(headers) - 1,
+            "가격인하 취합",
+            title_fmt
+        )
 
-        filter_parts = []
-        if store_name:
-            filter_parts.append(f"매장: {store_name}")
-        if query:
-            filter_parts.append(f"검색: {query}")
-        if date_start or date_end:
-            filter_parts.append(f"입고일: {date_start or '전체'} ~ {date_end or '전체'}")
-        if menu and menu != "전체상품":
-            filter_parts.append(f"분류: {menu}")
-        filter_text = " | ".join(filter_parts) if filter_parts else "전체 리스트"
+        store_label = store_name or "전체"
+        menu_label = menu if menu and menu != "전체상품" else "전체"
+        info_text = (
+            f"매장: {store_label} | "
+            f"분류: {menu_label} | "
+            f"총 {len(filtered):,}건 | "
+            f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
         sheet.merge_range(
             1, 0, 1, len(headers) - 1,
-            f"{filter_text} | 총 {len(filtered):,}건 | 생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            info_text,
             info_fmt
         )
 
@@ -995,77 +1025,63 @@ def download_excel():
             sheet.write(2, col, header, header_fmt)
 
         for row_idx, item in enumerate(filtered, start=3):
-            days = item.get("daysLeft", "")
-            section = clean_text(item.get("section", ""))
-            expiry_format = center_fmt
-            if section == "만료":
-                expiry_format = expired_fmt
-            elif section in ["7일이내", "30일이내", "60일이내", "90일이내"]:
-                expiry_format = warning_fmt
+            price_raw = clean_text(item.get("priceRaw", ""))
+            if not price_raw:
+                price_raw = clean_text(item.get("priceDisplay", ""))
 
             values = [
-                clean_text(item.get("inboundDate", "")),
-                clean_text(item.get("boxNo", "")),
                 clean_text(item.get("type", "")),
                 clean_text(item.get("category", "")),
                 clean_text(item.get("product", "")),
-                clean_text(item.get("priceDisplay", "")),
-                clean_text(item.get("priceRaw", "")),
-                clean_text(item.get("barcode", "")),
+                price_raw,
+                "",  # 인하 가격은 매장에서 직접 입력
                 clean_text(item.get("expiryDate", "")),
-                days,
-                section,
-                clean_text(item.get("manage", "")),
-                clean_text(item.get("store", "")),
-                clean_text(item.get("note", "")),
-                clean_text(item.get("sheet", "")),
-                item.get("row", ""),
+                item.get("daysLeft", ""),
             ]
 
-            for col, value in enumerate(values):
-                fmt = text_fmt
-                if col in [0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 15]:
-                    fmt = center_fmt
-                if col in [8, 9, 10]:
-                    fmt = expiry_format
-                sheet.write(row_idx, col, value, fmt)
+            sheet.write(row_idx, 0, values[0], center_fmt)
+            sheet.write(row_idx, 1, values[1], center_fmt)
+            sheet.write(row_idx, 2, values[2], text_fmt)
+            sheet.write(row_idx, 3, values[3], text_fmt)
+            sheet.write_blank(row_idx, 4, None, discount_input_fmt)
+            sheet.write(row_idx, 5, values[5], expiry_fmt)
+            sheet.write(row_idx, 6, values[6], days_fmt)
 
-        widths = [12, 10, 11, 12, 30, 22, 38, 18, 12, 10, 14, 14, 18, 34, 14, 8]
+            # 복합 가격·긴 상품명이 잘리지 않도록 행 높이 조절
+            line_count = max(
+                1,
+                len(str(values[2]).splitlines()),
+                len(str(values[3]).splitlines()),
+            )
+            estimated_lines = max(
+                line_count,
+                (len(str(values[2])) // 24) + 1,
+                (len(str(values[3])) // 32) + 1,
+            )
+            sheet.set_row(row_idx, max(28, min(90, 18 * estimated_lines)))
+
+        widths = [11, 12, 34, 44, 17, 14, 12]
         for idx, width in enumerate(widths):
             sheet.set_column(idx, idx, width)
 
-        sheet.set_row(0, 28)
+        sheet.set_row(0, 30)
         sheet.set_row(1, 24)
         sheet.set_row(2, 30)
         sheet.freeze_panes(3, 0)
         sheet.autofilter(2, 0, max(2, len(filtered) + 2), len(headers) - 1)
 
-        # 유통기한 요약 시트
-        summary = workbook.add_worksheet("유통기한요약")
-        summary_headers = ["구간", "건수"]
-        summary.write_row(0, 0, summary_headers, header_fmt)
-
-        summary_order = [
-            "만료", "7일이내", "30일이내", "60일이내",
-            "90일이내", "전체", "기한확인필요", "기한관리제외"
-        ]
-        counts = {}
-        for item in filtered:
-            key = clean_text(item.get("section", "")) or "기타"
-            counts[key] = counts.get(key, 0) + 1
-
-        for idx, key in enumerate(summary_order, start=1):
-            summary.write(idx, 0, key, text_fmt)
-            summary.write_number(idx, 1, counts.get(key, 0), center_fmt)
-
-        summary.set_column(0, 0, 20)
-        summary.set_column(1, 1, 12)
-        summary.freeze_panes(1, 0)
+        # 인쇄 설정: A4 가로, 한 페이지 너비
+        sheet.set_landscape()
+        sheet.set_paper(9)
+        sheet.fit_to_pages(1, 0)
+        sheet.set_margins(left=0.25, right=0.25, top=0.4, bottom=0.4)
+        sheet.repeat_rows(0, 2)
+        sheet.hide_gridlines(2)
 
         workbook.close()
         output.seek(0)
 
-        filename = f"가격리스트_취합_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        filename = f"가격인하_취합_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         return send_file(
             output,
             as_attachment=True,
