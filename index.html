@@ -74,7 +74,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <div class="title">박스번호를 선택하세요</div>
       <div class="sub">박스번호를 누르거나 직접 입력하면 상품명과 가격이 바로 표시됩니다.</div>
       <div class="boxJump">
-        <input id="workBoxInput" type="number" inputmode="numeric" min="1" placeholder="박스번호 직접 입력">
+        <input id="workBoxInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="박스번호 직접 입력">
         <button onclick="jumpToBox()">이동</button>
       </div>
       <div id="boxGrid" class="boxGrid"></div>
@@ -146,9 +146,23 @@ function pad(n){return String(n).padStart(2,"0")}function dateStr(d){return `${d
 function yesterday(){let d=new Date();d.setDate(d.getDate()-1);return dateStr(d)}function recent7(){let d=new Date();d.setDate(d.getDate()-6);return dateStr(d)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function norm(s){return String(s??"").toLowerCase().trim()}function won(n){return (!n||isNaN(n))?"":Number(n).toLocaleString()+"원"}
 function normalizeBox(v){
-  const text=String(v??"").trim();
-  const m=text.match(/(?:box|박스)?\s*0*(\d+)\s*번?/i);
-  return m?String(Number(m[1])):text;
+  let text=String(v??"").trim();
+
+  // 모바일 숫자 키보드에서 들어올 수 있는 전각 숫자를 반각 숫자로 변환
+  text=text.replace(/[０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
+
+  // 일반 숫자 또는 57.0 형태
+  if(/^\d+(?:\.0+)?$/.test(text)){
+    return String(parseInt(text,10));
+  }
+
+  // '57번', '박스 57', 'BOX 57' 형태
+  const matched=text.match(/(?:box|박스)?\s*0*(\d+)\s*번?/i);
+  if(matched){
+    return String(parseInt(matched[1],10));
+  }
+
+  return text;
 }
 function getStore(){return localStorage.getItem("selectedStore")||""}
 function initStore(){const s=document.getElementById("storeSelect");s.innerHTML='<option value="">지점 선택</option>'+STORES.map(x=>`<option value="${x}">${x}</option>`).join("");s.value=getStore();s.onchange=()=>{localStorage.setItem("selectedStore",s.value);loadOverrides().then(()=>{updateStatus();renderBoxes();search()})}}
@@ -188,13 +202,17 @@ function renderBoxes(){
 
 function jumpToBox(){
   const input=document.getElementById("workBoxInput");
-  const value=normalizeBox(input.value);
-  if(!value||!/^\\d+$/.test(value)){
+  const raw=String(input.value??"").trim();
+  const value=normalizeBox(raw);
+
+  if(value==="" || !Number.isInteger(Number(value)) || Number(value)<1){
     alert("박스번호를 숫자로 입력해 주세요.");
     input.focus();
     return;
   }
-  openBox(value);
+
+  input.value=String(Number(value));
+  openBox(String(Number(value)));
 }
 
 function openBox(n){let recent=JSON.parse(localStorage.getItem("recentBoxes")||"[]").filter(x=>x!==n);recent.unshift(n);localStorage.setItem("recentBoxes",JSON.stringify(recent.slice(0,8)));const rows=workRows().filter(x=>normalizeBox(x.boxNo)===normalizeBox(n));document.getElementById("workHome").classList.add("hidden");document.getElementById("workList").classList.remove("hidden");document.getElementById("boxTitle").innerText=`${n}번 박스`;document.getElementById("boxCount").innerText=`총 ${rows.length}개 상품`;renderWork(rows)}
