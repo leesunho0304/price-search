@@ -25,7 +25,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .hidden{display:none!important}
 .todayLabel{text-align:center;color:var(--green);font-size:12px;font-weight:900;margin:2px 0 12px}
 .title{font-size:17px;font-weight:900;margin-bottom:5px}.sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px}
-.boxJump{display:grid;grid-template-columns:1fr 86px;gap:8px;margin-bottom:11px}.boxJump input{height:46px;border:2px solid #cbd8d4;border-radius:14px;padding:0 12px;font-size:17px;outline:none}.boxJump input:focus{border-color:var(--green)}.boxJump button{border:0;border-radius:14px;background:var(--green);color:#fff;font-weight:900}.boxGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.boxJump{display:block;margin-bottom:11px}.boxJump input{height:46px;border:2px solid #cbd8d4;border-radius:14px;padding:0 12px;font-size:17px;outline:none}.boxJump input:focus{border-color:var(--green)}.boxJump button{border:0;border-radius:14px;background:var(--green);color:#fff;font-weight:900}.boxGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
 .boxBtn{min-height:56px;border:1px solid var(--line);border-radius:15px;background:#fff;font-size:18px;font-weight:900;color:#17211f;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .boxBtn:active{background:var(--green);color:#fff}
 .secondaryBtn{width:100%;height:42px;border-radius:14px;border:1px solid var(--line);background:#f8faf9;font-weight:900;margin-top:11px}
@@ -74,8 +74,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <div class="title">박스번호를 선택하세요</div>
       <div class="sub">박스번호를 누르거나 직접 입력하면 상품명과 가격이 바로 표시됩니다.</div>
       <div class="boxJump">
-        <input id="workBoxInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="박스번호 직접 입력">
-        <button onclick="jumpToBox()">이동</button>
+        <input id="workBoxInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="박스번호 입력 시 자동 이동">
       </div>
       <div id="boxGrid" class="boxGrid"></div>
       <button class="secondaryBtn" onclick="showRecentBox()">최근 본 박스</button>
@@ -141,7 +140,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 
 <script>
 const STORES=["영등포","서원","양재","당산","상계","수서","가양","석촌","강남","마곡","신대방3","가락","먹골","흑석","노원","녹번","왕십리","부평","하계","평택안중","대구","수원","갈산","답십리","선유도","석계","성남태평","인천논현","구로구청"];
-let RAW_DATA=[],DATA=[],META={},STORE_OVERRIDES={},mainMode="work",searchMode="product",currentMenu="전체상품",timer=null,visibleLimit=150,currentWorkDate="";
+let RAW_DATA=[],DATA=[],META={},STORE_OVERRIDES={},mainMode="work",searchMode="product",currentMenu="전체상품",timer=null,boxInputTimer=null,visibleLimit=150,currentWorkDate="";
 function pad(n){return String(n).padStart(2,"0")}function dateStr(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}function today(){return dateStr(new Date())}
 function yesterday(){let d=new Date();d.setDate(d.getDate()-1);return dateStr(d)}function recent7(){let d=new Date();d.setDate(d.getDate()-6);return dateStr(d)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function norm(s){return String(s??"").toLowerCase().trim()}function won(n){return (!n||isNaN(n))?"":Number(n).toLocaleString()+"원"}
@@ -200,6 +199,29 @@ function renderBoxes(){
   document.getElementById("boxGrid").innerHTML=buttons.join("");
 }
 
+
+function scheduleBoxJump(){
+  clearTimeout(boxInputTimer);
+
+  const input=document.getElementById("workBoxInput");
+  const raw=String(input.value??"").trim();
+
+  // 입력 중에는 안내창을 띄우지 않는다.
+  if(raw===""){
+    return;
+  }
+
+  boxInputTimer=setTimeout(()=>{
+    const value=normalizeBox(input.value);
+
+    if(value!=="" && Number.isInteger(Number(value)) && Number(value)>=1){
+      input.value=String(Number(value));
+      input.blur();
+      openBox(String(Number(value)));
+    }
+  },350);
+}
+
 function jumpToBox(){
   const input=document.getElementById("workBoxInput");
   const raw=String(input.value??"").trim();
@@ -217,7 +239,7 @@ function jumpToBox(){
 
 function openBox(n){let recent=JSON.parse(localStorage.getItem("recentBoxes")||"[]").filter(x=>x!==n);recent.unshift(n);localStorage.setItem("recentBoxes",JSON.stringify(recent.slice(0,8)));const rows=workRows().filter(x=>normalizeBox(x.boxNo)===normalizeBox(n));document.getElementById("workHome").classList.add("hidden");document.getElementById("workList").classList.remove("hidden");document.getElementById("boxTitle").innerText=`${n}번 박스`;document.getElementById("boxCount").innerText=`총 ${rows.length}개 상품`;renderWork(rows)}
 function showRecentBox(){const a=JSON.parse(localStorage.getItem("recentBoxes")||"[]");if(!a.length)return alert("최근 본 박스가 없습니다.");openBox(a[0])}
-function backToBoxes(){document.getElementById("workList").classList.add("hidden");document.getElementById("workHome").classList.remove("hidden")}
+function backToBoxes(){document.getElementById("workList").classList.add("hidden");document.getElementById("workHome").classList.remove("hidden");document.getElementById("workBoxInput").value="";document.getElementById("workBoxInput").focus()}
 function priceText(i){return i.priceDisplay||(i.price?won(i.price):(i.priceBand||"가격 정보 없음"))}
 function renderWork(rows){const root=document.getElementById("workResults");if(!rows.length){root.innerHTML='<div class="empty">상품이 없습니다.</div>';return}root.innerHTML=rows.map((i,k)=>{const multi=i.showPriceDetail||["multiple","discretion","range"].includes(i.priceType);return `<article class="card"><div class="name">${esc(i.product||"상품명 없음")}</div><div class="price ${multi?'multi':''}">${esc(priceText(i))}</div><div class="badges">${i.expiryDate?`<span class="badge ${Number(i.daysLeft)<=30?'warn':''}">유통기한 ${esc(i.expiryDate)}</span>`:""}${multi?'<span class="badge red">복합가격</span>':""}</div>${multi&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<button class="detailBtn" onclick="document.getElementById('wd${k}').classList.toggle('hidden')">자세히 보기</button><div id="wd${k}" class="detailBox hidden">입고일: ${esc(i.inboundDate||"-")}
 박스번호: ${esc(i.boxNo||"-")}
@@ -244,8 +266,12 @@ async function syncData(opt={}){const b=document.getElementById("syncBtn");b.dis
 async function start(){initStore();if((localStorage.getItem("lastSuccessfulSyncDate")||"")!==today())await syncData({silent:true,reloadAfter:false});await loadData()}
 document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));c.classList.add("active");currentMenu=c.dataset.menu;visibleLimit=150;search()});
 document.getElementById("q").addEventListener("input",scheduleSearch);
+document.getElementById("workBoxInput").addEventListener("input",scheduleBoxJump);
 document.getElementById("workBoxInput").addEventListener("keydown",e=>{
-  if(e.key==="Enter")jumpToBox();
+  if(e.key==="Enter"){
+    clearTimeout(boxInputTimer);
+    jumpToBox();
+  }
 });document.getElementById("dateStart").onchange=()=>{activeQuick(null);search()};document.getElementById("dateEnd").onchange=()=>{activeQuick(null);search()};start();
 </script>
 </body></html>
