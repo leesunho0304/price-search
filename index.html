@@ -25,7 +25,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .hidden{display:none!important}
 .todayLabel{text-align:center;color:var(--green);font-size:12px;font-weight:900;margin:2px 0 12px}
 .title{font-size:17px;font-weight:900;margin-bottom:5px}.sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px}
-.boxGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.boxJump{display:grid;grid-template-columns:1fr 86px;gap:8px;margin-bottom:11px}.boxJump input{height:46px;border:2px solid #cbd8d4;border-radius:14px;padding:0 12px;font-size:17px;outline:none}.boxJump input:focus{border-color:var(--green)}.boxJump button{border:0;border-radius:14px;background:var(--green);color:#fff;font-weight:900}.boxGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
 .boxBtn{min-height:56px;border:1px solid var(--line);border-radius:15px;background:#fff;font-size:18px;font-weight:900;color:#17211f;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .boxBtn:active{background:var(--green);color:#fff}
 .secondaryBtn{width:100%;height:42px;border-radius:14px;border:1px solid var(--line);background:#f8faf9;font-weight:900;margin-top:11px}
@@ -72,7 +72,11 @@ button,input,select{font:inherit}button{cursor:pointer}
     <div class="panel">
       <div id="workDate" class="todayLabel"></div>
       <div class="title">박스번호를 선택하세요</div>
-      <div class="sub">숫자 한 번만 누르면 상품명과 가격이 바로 표시됩니다.</div>
+      <div class="sub">박스번호를 누르거나 직접 입력하면 상품명과 가격이 바로 표시됩니다.</div>
+      <div class="boxJump">
+        <input id="workBoxInput" type="number" inputmode="numeric" min="1" placeholder="박스번호 직접 입력">
+        <button onclick="jumpToBox()">이동</button>
+      </div>
       <div id="boxGrid" class="boxGrid"></div>
       <button class="secondaryBtn" onclick="showRecentBox()">최근 본 박스</button>
     </div>
@@ -141,6 +145,11 @@ let RAW_DATA=[],DATA=[],META={},STORE_OVERRIDES={},mainMode="work",searchMode="p
 function pad(n){return String(n).padStart(2,"0")}function dateStr(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}function today(){return dateStr(new Date())}
 function yesterday(){let d=new Date();d.setDate(d.getDate()-1);return dateStr(d)}function recent7(){let d=new Date();d.setDate(d.getDate()-6);return dateStr(d)}
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function norm(s){return String(s??"").toLowerCase().trim()}function won(n){return (!n||isNaN(n))?"":Number(n).toLocaleString()+"원"}
+function normalizeBox(v){
+  const text=String(v??"").trim();
+  const m=text.match(/(?:box|박스)?\s*0*(\d+)\s*번?/i);
+  return m?String(Number(m[1])):text;
+}
 function getStore(){return localStorage.getItem("selectedStore")||""}
 function initStore(){const s=document.getElementById("storeSelect");s.innerHTML='<option value="">지점 선택</option>'+STORES.map(x=>`<option value="${x}">${x}</option>`).join("");s.value=getStore();s.onchange=()=>{localStorage.setItem("selectedStore",s.value);loadOverrides().then(()=>{updateStatus();renderBoxes();search()})}}
 function updateStatus(){document.getElementById("status").innerHTML=`업데이트 <b>${esc(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장 <b>${esc(getStore()||"미선택")}</b>`}
@@ -148,8 +157,47 @@ async function loadOverrides(){STORE_OVERRIDES={};const store=getStore();if(!sto
 function setMainMode(mode){mainMode=mode;const w=mode==="work";document.getElementById("workHome").classList.toggle("hidden",!w);document.getElementById("workList").classList.add("hidden");document.getElementById("searchArea").classList.toggle("hidden",w);document.getElementById("workTop").classList.toggle("active",w);document.getElementById("searchTop").classList.toggle("active",!w);document.getElementById("navWork").classList.toggle("active",w);document.getElementById("navSearch").classList.toggle("active",!w);if(w)renderBoxes();else search()}
 function latestInboundDate(){const dates=DATA.map(x=>x.inboundDate).filter(Boolean).sort();return dates.length?dates[dates.length-1]:""}
 function workRows(){const t=today(),todayRows=DATA.filter(x=>x.inboundDate===t);currentWorkDate=todayRows.length?t:latestInboundDate();return DATA.filter(x=>x.inboundDate===currentWorkDate)}
-function renderBoxes(){const rows=workRows();document.getElementById("workDate").innerText=currentWorkDate?`${currentWorkDate} 가격리스트`:"입고 데이터 없음";const nums=[...new Set(rows.map(x=>String(x.boxNo||"").trim()).filter(Boolean))].sort((a,b)=>(Number(a)||999999)-(Number(b)||999999)||a.localeCompare(b));document.getElementById("boxGrid").innerHTML=nums.length?nums.map(n=>`<button class="boxBtn" onclick="openBox('${esc(n)}')">${esc(n)}</button>`).join(""):'<div class="empty" style="grid-column:1/-1">표시할 박스번호가 없습니다.</div>'}
-function openBox(n){let recent=JSON.parse(localStorage.getItem("recentBoxes")||"[]").filter(x=>x!==n);recent.unshift(n);localStorage.setItem("recentBoxes",JSON.stringify(recent.slice(0,8)));const rows=workRows().filter(x=>String(x.boxNo||"").trim()===n);document.getElementById("workHome").classList.add("hidden");document.getElementById("workList").classList.remove("hidden");document.getElementById("boxTitle").innerText=`${n}번 박스`;document.getElementById("boxCount").innerText=`총 ${rows.length}개 상품`;renderWork(rows)}
+function renderBoxes(){
+  const rows=workRows();
+  document.getElementById("workDate").innerText=currentWorkDate?`${currentWorkDate} 가격리스트`:"입고 데이터 없음";
+
+  const detected=rows
+    .map(x=>Number(normalizeBox(x.boxNo)))
+    .filter(x=>Number.isInteger(x)&&x>0);
+
+  const detectedMax=detected.length?Math.max(...detected):0;
+  const savedMax=Number(localStorage.getItem("workMaxBoxNo")||57);
+  const maxBox=Math.max(57,savedMax,detectedMax);
+
+  if(detectedMax>savedMax){
+    localStorage.setItem("workMaxBoxNo",String(detectedMax));
+  }
+
+  const available=new Set(detected.map(String));
+  const buttons=[];
+  for(let n=1;n<=maxBox;n++){
+    const exists=available.has(String(n));
+    buttons.push(
+      `<button class="boxBtn${exists?"":" missing"}" 
+        style="${exists?"":"opacity:.55"}"
+        onclick="openBox('${n}')">${n}</button>`
+    );
+  }
+  document.getElementById("boxGrid").innerHTML=buttons.join("");
+}
+
+function jumpToBox(){
+  const input=document.getElementById("workBoxInput");
+  const value=normalizeBox(input.value);
+  if(!value||!/^\\d+$/.test(value)){
+    alert("박스번호를 숫자로 입력해 주세요.");
+    input.focus();
+    return;
+  }
+  openBox(value);
+}
+
+function openBox(n){let recent=JSON.parse(localStorage.getItem("recentBoxes")||"[]").filter(x=>x!==n);recent.unshift(n);localStorage.setItem("recentBoxes",JSON.stringify(recent.slice(0,8)));const rows=workRows().filter(x=>normalizeBox(x.boxNo)===normalizeBox(n));document.getElementById("workHome").classList.add("hidden");document.getElementById("workList").classList.remove("hidden");document.getElementById("boxTitle").innerText=`${n}번 박스`;document.getElementById("boxCount").innerText=`총 ${rows.length}개 상품`;renderWork(rows)}
 function showRecentBox(){const a=JSON.parse(localStorage.getItem("recentBoxes")||"[]");if(!a.length)return alert("최근 본 박스가 없습니다.");openBox(a[0])}
 function backToBoxes(){document.getElementById("workList").classList.add("hidden");document.getElementById("workHome").classList.remove("hidden")}
 function priceText(i){return i.priceDisplay||(i.price?won(i.price):(i.priceBand||"가격 정보 없음"))}
@@ -177,6 +225,9 @@ async function loadData(opt={}){let err;for(let n=1;n<=3;n++){try{if(n>1)documen
 async function syncData(opt={}){const b=document.getElementById("syncBtn");b.disabled=true;b.innerText="동기화중";try{const r=await fetch("/sync?ts="+Date.now(),{cache:"no-store"}),j=await r.json();if(!r.ok||!j.ok)throw new Error(j.message||"동기화 실패");localStorage.setItem("lastSuccessfulSyncDate",today());if(opt.reloadAfter!==false)await loadData({autoRecover:false});return true}catch(e){if(!opt.silent)alert(e.message||String(e));return false}finally{b.disabled=false;b.innerText="동기화"}}
 async function start(){initStore();if((localStorage.getItem("lastSuccessfulSyncDate")||"")!==today())await syncData({silent:true,reloadAfter:false});await loadData()}
 document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{document.querySelectorAll(".chip").forEach(x=>x.classList.remove("active"));c.classList.add("active");currentMenu=c.dataset.menu;visibleLimit=150;search()});
-document.getElementById("q").addEventListener("input",scheduleSearch);document.getElementById("dateStart").onchange=()=>{activeQuick(null);search()};document.getElementById("dateEnd").onchange=()=>{activeQuick(null);search()};start();
+document.getElementById("q").addEventListener("input",scheduleSearch);
+document.getElementById("workBoxInput").addEventListener("keydown",e=>{
+  if(e.key==="Enter")jumpToBox();
+});document.getElementById("dateStart").onchange=()=>{activeQuick(null);search()};document.getElementById("dateEnd").onchange=()=>{activeQuick(null);search()};start();
 </script>
 </body></html>

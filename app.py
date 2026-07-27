@@ -35,6 +35,27 @@ def to_number(v):
         return 0
 
 
+
+def normalize_box_no(value):
+    """
+    박스번호를 검색 가능한 형태로 정리한다.
+    예: '57번', 'BOX 57', '57.0' -> '57'
+    숫자가 아닌 박스명은 원문을 유지한다.
+    """
+    text = clean_text(value)
+    if not text:
+        return ""
+
+    numeric = re.fullmatch(r"\s*(\d+)(?:\.0+)?\s*", text)
+    if numeric:
+        return str(int(numeric.group(1)))
+
+    labeled = re.search(r"(?:box|박스)?\s*0*(\d+)\s*번?", text, flags=re.I)
+    if labeled:
+        return str(int(labeled.group(1)))
+
+    return text
+
 def sheet_year(title):
     m = re.search(r"(20\d{2})", str(title))
     return int(m.group(1)) if m else date.today().year
@@ -390,6 +411,7 @@ def parse_sheet(values, title, exceptions=None):
     exceptions = exceptions or {}
     rows = []
     current_inbound = ""
+    current_box_no = ""
     headers = None
     col = {}
 
@@ -398,6 +420,7 @@ def parse_sheet(values, title, exceptions=None):
             continue
 
         if is_header_row(row):
+            current_box_no = ""
             headers = row
             col = {
                 "box": find_col(row, ["박스번호", "박스"]),
@@ -416,6 +439,7 @@ def parse_sheet(values, title, exceptions=None):
         date_row = detect_inbound_date_row(row, y)
         if date_row:
             current_inbound = date_row
+            current_box_no = ""
             continue
 
         if not headers or not col:
@@ -431,7 +455,11 @@ def parse_sheet(values, title, exceptions=None):
         category_raw = cell(row, col.get("category"))
         category = category_raw if category_raw in VALID_CATEGORIES else extract_category(product)
         item_type = cell(row, col.get("type"))
-        box_no = cell(row, col.get("box"))
+        raw_box_no = cell(row, col.get("box"))
+        normalized_box_no = normalize_box_no(raw_box_no)
+        if normalized_box_no:
+            current_box_no = normalized_box_no
+        box_no = current_box_no
         barcode = cell(row, col.get("barcode"))
         price_raw = cell(row, col.get("price"))
         note = cell(row, col.get("note"))
