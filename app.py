@@ -337,10 +337,10 @@ def section_by_expiry(expiry):
         sec = "60일이내"
     elif days <= 90:
         sec = "90일이내"
-    elif days >= 180:
-        sec = "장기재고"
+    elif days <= 180:
+        sec = "180일이내"
     else:
-        sec = "전체"
+        sec = "장기재고"
     return days, sec
 
 
