@@ -1129,6 +1129,102 @@ def download_excel():
         return jsonify({"ok": False, "message": str(e)}), 500
 
 
+
+@app.route("/original_view")
+def original_view():
+    sheet_title = clean_text(request.args.get("sheet", ""))
+    product_name = clean_text(request.args.get("product", ""))
+    try:
+        target_row = int(float(request.args.get("row", "0") or 0))
+    except Exception:
+        target_row = 0
+
+    if not sheet_title:
+        return "시트 정보가 없습니다.", 400
+
+    try:
+        client = get_credentials()
+        spreadsheet = client.open_by_key(PRICE_SPREADSHEET_ID)
+        worksheet = spreadsheet.worksheet(sheet_title)
+        values = worksheet.get_all_values()
+    except Exception as e:
+        return f"원본 가격리스트를 불러오지 못했습니다: {e}", 500
+
+    max_cols = max((len(r) for r in values), default=1)
+    rendered_rows = []
+
+    for row_no, row in enumerate(values, start=1):
+        padded = list(row) + [""] * (max_cols - len(row))
+        target_class = "target-row" if row_no == target_row else ""
+        cells = []
+
+        for value in padded:
+            safe = (str(value).replace("&", "&amp;").replace("<", "&lt;")
+                    .replace(">", "&gt;").replace('"', "&quot;"))
+            product_class = "target-cell" if row_no == target_row and product_name and product_name in str(value) else ""
+            cells.append(f'<td class="{product_class}">{safe or "&nbsp;"}</td>')
+
+        row_id = ' id="target-row"' if row_no == target_row else ""
+        rendered_rows.append(
+            f'<tr{row_id} class="{target_class}"><th class="row-number">{row_no}</th>'
+            + "".join(cells) + "</tr>"
+        )
+
+    safe_sheet = sheet_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_product = product_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    return f"""<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>원본 가격리스트</title>
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;background:#f3f4f6;font-family:Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#111827}}
+.toolbar{{position:sticky;top:0;z-index:30;background:#0f766e;color:#fff;padding:10px;box-shadow:0 2px 8px rgba(0,0,0,.18)}}
+.toolbar-inner{{max-width:1500px;margin:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+.title{{font-size:17px;font-weight:900;flex:1;min-width:180px}}
+.meta{{font-size:12px;opacity:.9}}
+button{{height:38px;border:0;border-radius:11px;padding:0 12px;font-weight:900}}
+.print{{background:#fff;color:#0f766e}}
+.close{{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4)}}
+.notice{{max-width:1500px;margin:10px auto 0;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;color:#9a3412;font-size:13px}}
+.wrap{{max-width:1500px;margin:10px auto;padding:0 8px 30px;overflow:auto}}
+table{{border-collapse:collapse;background:#fff;width:max-content;min-width:100%;box-shadow:0 1px 4px rgba(0,0,0,.08)}}
+th,td{{border:1px solid #cbd5e1;padding:7px 9px;font-size:12px;line-height:1.45;white-space:pre-wrap;vertical-align:top;max-width:380px}}
+.row-number{{position:sticky;left:0;z-index:2;background:#f1f5f9;color:#64748b;min-width:46px;text-align:center}}
+.target-row td,.target-row th{{background:#fff3a3!important;border-top:2px solid #f59e0b;border-bottom:2px solid #f59e0b}}
+.target-cell{{outline:3px solid #dc2626;outline-offset:-3px;font-weight:900}}
+@media print{{
+.toolbar,.notice{{display:none}}
+body{{background:#fff}}
+.wrap{{margin:0;padding:0;overflow:visible}}
+table{{box-shadow:none;width:100%}}
+th,td{{font-size:9px;padding:4px}}
+.row-number{{position:static}}
+}}
+</style>
+</head>
+<body>
+<div class="toolbar"><div class="toolbar-inner">
+<div class="title">원본 가격리스트 · {safe_sheet}</div>
+<div class="meta">행 {target_row or "-"} · {safe_product or "선택 상품"}</div>
+<button class="print" onclick="window.print()">PDF 저장 / 인쇄</button>
+<button class="close" onclick="window.close()">닫기</button>
+</div></div>
+<div class="notice">노란색 행이 검색 상품의 원본 위치입니다. 화면을 확대하거나 PDF로 저장할 수 있습니다.</div>
+<div class="wrap"><table><tbody>{''.join(rendered_rows)}</tbody></table></div>
+<script>
+window.addEventListener("load",()=>{{
+ const target=document.getElementById("target-row");
+ if(target) setTimeout(()=>target.scrollIntoView({{behavior:"smooth",block:"center",inline:"center"}}),250);
+}});
+</script>
+</body>
+</html>"""
+
+
 @app.route("/health")
 def health():
     return "ok"
