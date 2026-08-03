@@ -45,7 +45,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .quickRow{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}.quickRow button{height:40px;border-radius:12px;border:1px solid var(--line);background:#fff;font-weight:900}.quickRow button.active{background:var(--green);color:#fff;border-color:var(--green)}
 .dateGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.dateGrid label{display:block;font-size:11px;color:var(--muted);font-weight:900;margin:0 0 4px 2px}.dateGrid input{height:43px;width:100%;border:1px solid #ccd7d4;border-radius:12px;padding:0 9px}
 .chips{display:flex;gap:7px;overflow:auto;padding:0 0 9px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}.chip{flex:0 0 auto;border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 12px;font-size:13px;font-weight:900;color:#3d4945}.chip.active{background:#17211f;color:#fff;border-color:#17211f}
-.count{font-size:13px;color:#47544f;margin:3px 2px 9px}.empty{background:#fff;border:1px dashed #cbd5d1;border-radius:17px;padding:22px;color:#66736f;line-height:1.7}
+.smartHint{margin-top:8px;padding:8px 10px;border-radius:12px;background:#eef7ff;color:#1d4ed8;font-size:12px;line-height:1.45}.scoreBadge{display:inline-flex;margin-left:6px;padding:3px 7px;border-radius:999px;background:#e0f2fe;color:#075985;font-size:10px;font-weight:900}.count{font-size:13px;color:#47544f;margin:3px 2px 9px}.empty{background:#fff;border:1px dashed #cbd5d1;border-radius:17px;padding:22px;color:#66736f;line-height:1.7}
 .expiryEdit{display:grid;grid-template-columns:1fr 76px;gap:6px;margin-top:10px}.expiryEdit input{height:38px;border:1px solid #ccd7d4;border-radius:11px;padding:0 8px}.expiryEdit button{border:0;border-radius:11px;background:var(--green);color:#fff;font-weight:900}
 .exceptionBtns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}.exceptionBtns button{height:36px;border:0;border-radius:11px;color:#fff;font-size:12px;font-weight:900}.manufacture{background:#f59e0b}.exclude{background:#6b7280}.expiry{background:#2563eb}
 .bottomNav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,255,.98);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
@@ -93,11 +93,12 @@ button,input,select{font:inherit}button{cursor:pointer}
     <div class="searchBox">
       <div class="searchRow">
         <select id="searchModeSelect" onchange="setSearchMode(this.value)">
-          <option value="product">상품명</option><option value="box">박스번호</option>
+          <option value="product">정확 검색</option><option value="smart">스마트 검색</option><option value="box">박스번호</option>
         </select>
         <input id="q" type="search" placeholder="상품명을 입력하세요" autocomplete="off">
         <button class="clearBtn" onclick="clearSearch()">초기화</button>
       </div>
+      <div id="smartHint" class="smartHint hidden">오타·띄어쓰기·비슷한 표현까지 찾아 점수순으로 보여줍니다. 외부 AI API를 호출하지 않아 검색 비용이 들지 않습니다.</div>
       <div class="actionRow">
         <button class="detailSearchBtn" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
         <button class="downloadBtn" onclick="downloadExcel()">가격 인하 요청서 엑셀 다운로드</button>
@@ -248,15 +249,57 @@ function renderWork(rows){const root=document.getElementById("workResults");if(!
 바코드: ${esc(i.barcode||"-")}
 배분매장: ${esc(i.store||"-")}
 비고: ${esc(i.note||"-")}</div></article>`}).join("")}
-function setSearchMode(m){searchMode=m;const q=document.getElementById("q");q.value="";q.inputMode=m==="box"?"numeric":"text";q.placeholder=m==="box"?"박스번호를 입력하세요":"상품명을 입력하세요";search()}
+function setSearchMode(m){
+  searchMode=m;
+  const q=document.getElementById("q");
+  q.value="";
+  q.inputMode=m==="box"?"numeric":"text";
+  q.placeholder=m==="box"?"박스번호를 입력하세요":(m==="smart"?"예: 하얀 물티슈, 여름 신발":"상품명을 입력하세요");
+  document.getElementById("smartHint").classList.toggle("hidden",m!=="smart");
+  search();
+}
 function toggleDetail(){const a=document.getElementById("detailArea"),b=document.getElementById("detailToggleBtn");a.classList.toggle("hidden");b.innerText=a.classList.contains("hidden")?"세부검색 펼치기":"세부검색 접기"}
 function activeQuick(id){["allBtn","todayBtn","yesterdayBtn","recentBtn"].forEach(x=>document.getElementById(x).classList.remove("active"));if(id)document.getElementById(id).classList.add("active")}
 function setQuickDate(t){const s=document.getElementById("dateStart"),e=document.getElementById("dateEnd");visibleLimit=150;if(t==="all"){s.value="";e.value="";activeQuick("allBtn")}if(t==="today"){s.value=today();e.value=today();activeQuick("todayBtn")}if(t==="yesterday"){s.value=yesterday();e.value=yesterday();activeQuick("yesterdayBtn")}if(t==="recent7"){s.value=recent7();e.value=today();activeQuick("recentBtn")}search()}
 function clearSearch(){document.getElementById("q").value="";document.getElementById("dateStart").value="";document.getElementById("dateEnd").value="";currentMenu="전체상품";visibleLimit=150;document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c.dataset.menu==="전체상품"));activeQuick("allBtn");search()}
+
+const SMART_GROUPS=[
+  ["하얀","화이트","백색"],["검은","검정","블랙"],["빨간","빨강","레드"],["파란","파랑","블루"],["회색","그레이"],
+  ["운동화","스니커즈","러닝화","런닝화","트레이닝화"],["여름신발","샌들","슬리퍼","아쿠아슈즈","쪼리"],
+  ["겨울신발","부츠","방한화","털신"],["신발","슈즈","운동화","스니커즈","샌들","슬리퍼","구두","부츠","로퍼"],
+  ["아동","유아","키즈","어린이"],["성인","어른","남성","여성"],["물티슈","티슈","물휴지","wet wipes"],
+  ["화장지","휴지","두루마리"],["이불","침구","담요","블랭킷"],["니트","스웨터"],["점퍼","자켓","재킷","아우터"],
+  ["바지","팬츠","하의"],["상의","티셔츠","셔츠","블라우스"],["가방","백","숄더백","토트백","크로스백"],
+  ["세제","세탁세제","주방세제"],["샴푸","린스","컨디셔너"],["클렌징","세안","폼클렌징","클렌저"],
+  ["로션","크림","보습제"],["마스크","마스크팩","팩"],["건강식품","영양제","비타민"],
+  ["과자","스낵","쿠키"],["음료","주스","쥬스","차"],["잡화29","잡화 29","잡화29.0","잡화 29.0"],
+  ["재량","매니저재량","매장재량","권역재량"]
+];
+function smartNormalize(text){return String(text??"").toLowerCase().normalize("NFKC").replace(/[()[\]{}<>.,·ㆍ_\\/|~\-–—:;'"!?%+*=]/g," ").replace(/\s+/g," ").trim()}
+function compactText(text){return smartNormalize(text).replace(/\s+/g,"")}
+function smartTokens(query){const base=smartNormalize(query).split(/\s+/).filter(Boolean);const expanded=new Set(base);const compact=compactText(query);if(compact)expanded.add(compact);for(const token of [...expanded]){for(const group of SMART_GROUPS){const normalizedGroup=group.map(smartNormalize);if(normalizedGroup.some(x=>x===token||compactText(x)===compactText(token))){group.forEach(x=>{expanded.add(smartNormalize(x));expanded.add(compactText(x))})}}}return [...expanded].filter(Boolean)}
+function levenshtein(a,b){a=compactText(a);b=compactText(b);if(a===b)return 0;if(!a.length)return b.length;if(!b.length)return a.length;let prev=Array.from({length:b.length+1},(_,i)=>i);for(let i=1;i<=a.length;i++){const cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}return prev[b.length]}
+function similarity(a,b){const aa=compactText(a),bb=compactText(b),maxLen=Math.max(aa.length,bb.length);return maxLen?1-(levenshtein(aa,bb)/maxLen):1}
+function scoreSmartItem(item,query){const product=smartNormalize(item.product||""),productCompact=compactText(item.product||""),search=smartNormalize(item.search||""),searchCompact=compactText(item.search||""),original=smartNormalize(query),originalCompact=compactText(query),tokens=smartTokens(query);let score=0;const reasons=[];if(product===original){score+=120;reasons.push("상품명 정확 일치")}if(productCompact===originalCompact){score+=110;reasons.push("띄어쓰기 무시 일치")}if(product.startsWith(original)&&original){score+=85;reasons.push("상품명 앞부분 일치")}if(product.includes(original)&&original){score+=75;reasons.push("상품명 포함")}if(productCompact.includes(originalCompact)&&originalCompact){score+=72;reasons.push("붙여쓰기 일치")}for(const token of tokens){const tc=compactText(token);if(!tc)continue;if(product.includes(token)){score+=34;reasons.push(`상품명: ${token}`)}else if(productCompact.includes(tc)){score+=30;reasons.push(`유사어: ${token}`)}else if(search.includes(token)||searchCompact.includes(tc)){score+=18;reasons.push(`검색어 연결: ${token}`)}}for(const qw of original.split(/\s+/).filter(Boolean)){if(qw.length<2)continue;let best=0;for(const pw of product.split(/\s+/).filter(Boolean)){if(Math.abs(pw.length-qw.length)>2)continue;best=Math.max(best,similarity(qw,pw))}if(best>=.82){score+=26;reasons.push("오타 유사")}else if(best>=.68)score+=12}return {score,reasons:[...new Set(reasons)].slice(0,3)}}
+
 function passMenu(i){if(currentMenu==="전체상품")return true;if(currentMenu==="유통기한관리")return i.manage==="유통기한관리";if(currentMenu==="기한확인필요")return i.manage==="기한확인필요";if(currentMenu==="비관리대상")return i.manage==="비관리대상";return i.section===currentMenu}
 function scheduleSearch(){clearTimeout(timer);timer=setTimeout(search,180)}
-function search(){const raw=document.getElementById("q").value.trim(),q=norm(raw),s=document.getElementById("dateStart").value,e=document.getElementById("dateEnd").value;let rows=DATA.filter(passMenu);if(s)rows=rows.filter(x=>(x.inboundDate||"")>=s);if(e)rows=rows.filter(x=>(x.inboundDate||"")<=e);if(searchMode==="box"){if(raw)rows=rows.filter(x=>String(x.boxNo||"").trim()===raw)}else{const ts=q.split(/\s+/).filter(Boolean);if(ts.length)rows=rows.filter(x=>ts.every(t=>norm(x.search||"").includes(t)))}renderSearch(rows)}
-function renderSearch(rows){document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;const root=document.getElementById("results");if(!rows.length){root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return}root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>`<article class="card"><div class="name">${esc(i.product||"")}</div><div class="price">${esc(priceText(i))}</div><div class="badges"><span class="badge">${esc(i.inboundDate||"-")}</span><span class="badge">박스 ${esc(i.boxNo||"-")}</span>${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}</div>${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<div class="expiryEdit"><input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}"><button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button></div><div class="exceptionBtns"><button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button><button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button><button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button></div></article>`).join("");if(rows.length>visibleLimit)root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>')}
+function search(){
+  const raw=document.getElementById("q").value.trim(),q=norm(raw),s=document.getElementById("dateStart").value,e=document.getElementById("dateEnd").value;
+  let rows=DATA.filter(passMenu);
+  if(s)rows=rows.filter(x=>(x.inboundDate||"")>=s);
+  if(e)rows=rows.filter(x=>(x.inboundDate||"")<=e);
+  if(searchMode==="box"){
+    if(raw)rows=rows.filter(x=>String(x.boxNo||"").trim()===raw);
+  }else if(searchMode==="smart"){
+    if(raw)rows=rows.map(item=>{const result=scoreSmartItem(item,raw);return {...item,_smartScore:result.score,_smartReasons:result.reasons}}).filter(item=>item._smartScore>=18).sort((a,b)=>b._smartScore-a._smartScore);
+  }else{
+    const ts=q.split(/\s+/).filter(Boolean);
+    if(ts.length)rows=rows.filter(x=>ts.every(t=>norm(x.search||"").includes(t)));
+  }
+  renderSearch(rows);
+}
+function renderSearch(rows){document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;const root=document.getElementById("results");if(!rows.length){root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return}root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>`<article class="card"><div class="name">${esc(i.product||"")}${searchMode==="smart"&&i._smartScore?`<span class="scoreBadge">일치도 ${Math.min(100,Math.round(i._smartScore))}</span>`:""}</div><div class="price">${esc(priceText(i))}</div>${searchMode==="smart"&&i._smartReasons?.length?`<div class="smartHint" style="margin:8px 0 0">검색 연결: ${esc(i._smartReasons.join(" · "))}</div>`:""}<div class="badges"><span class="badge">${esc(i.inboundDate||"-")}</span><span class="badge">박스 ${esc(i.boxNo||"-")}</span>${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}</div>${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<div class="expiryEdit"><input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}"><button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button></div><div class="exceptionBtns"><button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button><button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button><button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button></div></article>`).join("");if(rows.length>visibleLimit)root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>')}
 async function saveExpiry(key,id){const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const value=document.getElementById(id).value;if(!value)return alert("유통기한을 선택해 주세요.");const r=await fetch(`/set_store_item_expiry/${key}/${encodeURIComponent(store)}/${value}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"저장 실패");await loadData({autoRecover:false});alert("저장 완료")}
 async function setException(key,mode){const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${key}/${mode}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"설정 실패");await loadData({autoRecover:false});alert("설정 완료")}
 function downloadExcel(){const p=new URLSearchParams({mode:searchMode,q:document.getElementById("q").value||"",start:document.getElementById("dateStart").value||"",end:document.getElementById("dateEnd").value||"",menu:currentMenu,store:getStore()});location.href="/download_excel?"+p}
