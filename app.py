@@ -1152,6 +1152,33 @@ def original_view():
 
     max_cols = max((len(r) for r in values), default=1)
 
+    # 민감정보인 입고/배분/출고 수량 열은 원본 보기에서 완전히 제외한다.
+    quantity_keywords = [
+        "입고수량", "입고 수량", "수량", "입고량",
+        "배분수량", "배분 수량", "출고수량", "출고 수량",
+        "수량(개)", "수량(박스)", "qty", "quantity"
+    ]
+    hidden_quantity_cols = set()
+
+    # 대상 행 위쪽의 헤더 후보를 확인해 수량 열을 찾는다.
+    header_scan_end = min(target_row if target_row else len(values), len(values))
+    for idx in range(header_scan_end - 1, -1, -1):
+        row = values[idx]
+        normalized_row = [clean_text(v).lower().replace(" ", "") for v in row]
+        found_any_header = False
+
+        for col_idx, value in enumerate(normalized_row):
+            if any(keyword.lower().replace(" ", "") == value or
+                   keyword.lower().replace(" ", "") in value
+                   for keyword in quantity_keywords):
+                hidden_quantity_cols.add(col_idx)
+                found_any_header = True
+
+        # 일반 헤더 행을 찾으면 그 위쪽까지 계속 올라가지 않는다.
+        if any(key in value for value in normalized_row
+               for key in ["상품명", "품명", "가격", "판매가", "단가", "바코드", "박스번호"]):
+            break
+
     # 대상 행 위쪽에서 가장 가까운 헤더를 찾아 상품명/가격 칼럼을 추정한다.
     product_col = None
     price_col = None
@@ -1199,7 +1226,9 @@ def original_view():
     if not detected_price:
         # 가격 칼럼을 못 찾았을 때 대상 행 안에서 가격처럼 보이는 값을 보조 탐색
         price_candidates = []
-        for value in target_values:
+        for col_idx, value in enumerate(target_values):
+            if col_idx in hidden_quantity_cols:
+                continue
             text = clean_text(value)
             if re.search(r"\d{1,3}(?:,\d{3})+|\d{4,6}", text) or "재량" in text or "가격" in text:
                 price_candidates.append(text)
@@ -1212,10 +1241,17 @@ def original_view():
         target_class = "target-row" if row_no == target_row else ""
         cells = []
 
-        for value in padded:
+        for col_idx, value in enumerate(padded):
+            if col_idx in hidden_quantity_cols:
+                continue
+
             safe = (str(value).replace("&", "&amp;").replace("<", "&lt;")
                     .replace(">", "&gt;").replace('"', "&quot;"))
-            product_class = "target-cell" if row_no == target_row and product_name and product_name in str(value) else ""
+            product_class = (
+                "target-cell"
+                if row_no == target_row and product_name and product_name in str(value)
+                else ""
+            )
             cells.append(f'<td class="{product_class}">{safe or "&nbsp;"}</td>')
 
         row_id = ' id="target-row"' if row_no == target_row else ""
@@ -1293,7 +1329,7 @@ th,td{{font-size:9px;padding:4px}}
     </div>
   </div>
 </div>
-<div class="notice">상단에서 상품명과 가격을 먼저 확인할 수 있습니다. 아래 노란색 행은 원본 위치입니다.</div>
+<div class="notice">상단에서 상품명과 가격을 먼저 확인할 수 있습니다. 아래 노란색 행은 원본 위치이며, 입고·배분·출고 수량 정보는 표시하지 않습니다.</div>
 <div class="wrap"><table><tbody>{''.join(rendered_rows)}</tbody></table></div>
 <script>
 window.addEventListener("load",()=>{{
