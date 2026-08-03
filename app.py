@@ -1151,6 +1151,60 @@ def original_view():
         return f"원본 가격리스트를 불러오지 못했습니다: {e}", 500
 
     max_cols = max((len(r) for r in values), default=1)
+
+    # 대상 행 위쪽에서 가장 가까운 헤더를 찾아 상품명/가격 칼럼을 추정한다.
+    product_col = None
+    price_col = None
+    header_row_no = 0
+
+    header_product_keywords = ["상품명", "품명", "상품", "제품명"]
+    header_price_keywords = ["가격", "판매가", "단가", "금액"]
+
+    search_end = min(target_row if target_row else len(values), len(values))
+    for idx in range(search_end - 1, -1, -1):
+        row = values[idx]
+        normalized = [clean_text(v).replace(" ", "") for v in row]
+
+        found_product = next(
+            (col_idx for col_idx, value in enumerate(normalized)
+             if any(keyword in value for keyword in header_product_keywords)),
+            None
+        )
+        found_price = next(
+            (col_idx for col_idx, value in enumerate(normalized)
+             if any(keyword in value for keyword in header_price_keywords)),
+            None
+        )
+
+        if found_product is not None or found_price is not None:
+            product_col = found_product
+            price_col = found_price
+            header_row_no = idx + 1
+            break
+
+    target_values = values[target_row - 1] if 1 <= target_row <= len(values) else []
+    detected_product = (
+        clean_text(target_values[product_col])
+        if product_col is not None and product_col < len(target_values)
+        else product_name
+    )
+    detected_price = (
+        clean_text(target_values[price_col])
+        if price_col is not None and price_col < len(target_values)
+        else ""
+    )
+
+    if not detected_product:
+        detected_product = product_name or "상품명 확인 필요"
+    if not detected_price:
+        # 가격 칼럼을 못 찾았을 때 대상 행 안에서 가격처럼 보이는 값을 보조 탐색
+        price_candidates = []
+        for value in target_values:
+            text = clean_text(value)
+            if re.search(r"\d{1,3}(?:,\d{3})+|\d{4,6}", text) or "재량" in text or "가격" in text:
+                price_candidates.append(text)
+        detected_price = " / ".join(price_candidates[:3]) if price_candidates else "가격 정보 확인 필요"
+
     rendered_rows = []
 
     for row_no, row in enumerate(values, start=1):
@@ -1171,7 +1225,8 @@ def original_view():
         )
 
     safe_sheet = sheet_title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    safe_product = product_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_product = detected_product.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    safe_price = detected_price.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -1189,8 +1244,19 @@ body{{margin:0;background:#f3f4f6;font-family:Arial,'Apple SD Gothic Neo','Malgu
 button{{height:38px;border:0;border-radius:11px;padding:0 12px;font-weight:900}}
 .print{{background:#fff;color:#0f766e}}
 .close{{background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.4)}}
+.focus-card{{position:sticky;top:58px;z-index:20;max-width:1500px;margin:10px auto 0;padding:0 8px}}
+.focus-inner{{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,280px);gap:10px;background:#fff;border:2px solid #0f766e;border-radius:16px;padding:13px 14px;box-shadow:0 5px 16px rgba(15,118,110,.16)}}
+.focus-label{{font-size:11px;font-weight:900;color:#64748b;margin-bottom:5px}}
+.focus-product{{font-size:19px;font-weight:950;line-height:1.35;word-break:keep-all}}
+.focus-price{{font-size:23px;font-weight:950;color:#dc2626;line-height:1.3;white-space:pre-wrap;word-break:keep-all}}
 .notice{{max-width:1500px;margin:10px auto 0;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;color:#9a3412;font-size:13px}}
 .wrap{{max-width:1500px;margin:10px auto;padding:0 8px 30px;overflow:auto}}
+@media(max-width:640px){{
+  .focus-card{{top:58px}}
+  .focus-inner{{grid-template-columns:1fr;padding:12px}}
+  .focus-product{{font-size:17px}}
+  .focus-price{{font-size:22px}}
+}}
 table{{border-collapse:collapse;background:#fff;width:max-content;min-width:100%;box-shadow:0 1px 4px rgba(0,0,0,.08)}}
 th,td{{border:1px solid #cbd5e1;padding:7px 9px;font-size:12px;line-height:1.45;white-space:pre-wrap;vertical-align:top;max-width:380px}}
 .row-number{{position:sticky;left:0;z-index:2;background:#f1f5f9;color:#64748b;min-width:46px;text-align:center}}
@@ -1198,6 +1264,8 @@ th,td{{border:1px solid #cbd5e1;padding:7px 9px;font-size:12px;line-height:1.45;
 .target-cell{{outline:3px solid #dc2626;outline-offset:-3px;font-weight:900}}
 @media print{{
 .toolbar,.notice{{display:none}}
+.focus-card{{position:static;margin:0 0 8px;padding:0}}
+.focus-inner{{box-shadow:none}}
 body{{background:#fff}}
 .wrap{{margin:0;padding:0;overflow:visible}}
 table{{box-shadow:none;width:100%}}
@@ -1213,7 +1281,19 @@ th,td{{font-size:9px;padding:4px}}
 <button class="print" onclick="window.print()">PDF 저장 / 인쇄</button>
 <button class="close" onclick="window.close()">닫기</button>
 </div></div>
-<div class="notice">노란색 행이 검색 상품의 원본 위치입니다. 화면을 확대하거나 PDF로 저장할 수 있습니다.</div>
+<div class="focus-card">
+  <div class="focus-inner">
+    <div>
+      <div class="focus-label">상품명</div>
+      <div class="focus-product">{safe_product}</div>
+    </div>
+    <div>
+      <div class="focus-label">가격</div>
+      <div class="focus-price">{safe_price}</div>
+    </div>
+  </div>
+</div>
+<div class="notice">상단에서 상품명과 가격을 먼저 확인할 수 있습니다. 아래 노란색 행은 원본 위치입니다.</div>
 <div class="wrap"><table><tbody>{''.join(rendered_rows)}</tbody></table></div>
 <script>
 window.addEventListener("load",()=>{{
