@@ -613,6 +613,34 @@ def index():
     return send_from_directory(".", "index.html")
 
 
+@app.route("/index.html")
+def index_file():
+    return send_from_directory(".", "index.html")
+
+
+@app.route("/service-worker.js")
+def service_worker():
+    response = send_from_directory(".", "service-worker.js", mimetype="application/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(".", "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.route("/offline.html")
+def offline_page():
+    return send_from_directory(".", "offline.html")
+
+
+@app.route("/app-icon.svg")
+def app_icon():
+    return send_from_directory(".", "app-icon.svg", mimetype="image/svg+xml")
+
+
 @app.route("/search_data.json")
 def data():
     should_sync = not Path(DATA_FILE).exists()

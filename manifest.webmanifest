@@ -1,0 +1,19 @@
+{
+  "name": "기빙플러스 가격검색",
+  "short_name": "가격검색",
+  "description": "매장 가격리스트 검색 및 오프라인 작업",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#0f766e",
+  "lang": "ko-KR",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
