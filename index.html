@@ -49,7 +49,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .name{font-size:17px;font-weight:900;line-height:1.4;margin-bottom:7px}.price{font-size:23px;font-weight:950;line-height:1.3}.price.multi{color:var(--red)}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.badge{font-size:11px;font-weight:900;border-radius:999px;padding:5px 8px;background:#e8f7f3;color:#0b6f63}.badge.warn{background:#fff4d6;color:#925700}.badge.red{background:#ffe4e6;color:#b91c1c}
 .priceRaw{margin-top:8px;padding:10px;border-radius:12px;background:#fff8e8;border:1px solid #f5dfaa;white-space:pre-wrap;line-height:1.65;font-size:13px}
-.originalBtn{width:100%;height:40px;margin-top:8px;border:0;border-radius:12px;background:#0f766e;color:#fff;font-weight:900}.detailBtn{width:100%;height:38px;margin-top:9px;border:1px solid var(--line);border-radius:12px;background:#f8faf9;font-weight:900}
+.detailBtn{width:100%;height:38px;margin-top:9px;border:1px solid var(--line);border-radius:12px;background:#f8faf9;font-weight:900}
 .detailBox{margin-top:8px;padding:10px;border-radius:12px;background:#f8faf9;font-size:12px;line-height:1.7;color:#485650;white-space:pre-wrap}
 .searchRow{display:grid;grid-template-columns:108px 1fr 68px;gap:7px}
 .searchRow select,.searchRow input{height:46px;border:1px solid #ccd7d4;border-radius:14px;background:#fff;padding:0 10px;font-size:15px;outline:none}.searchRow input:focus{border-color:var(--green)}
@@ -170,7 +170,7 @@ const STORES=["영등포","서원","양재","당산","상계","수서","가양",
 let RAW_DATA=[],DATA=[],META={},STORE_OVERRIDES={},mainMode="work",searchMode="product",currentMenu="전체상품",timer=null,boxInputTimer=null,visibleLimit=150,currentWorkDate="";
 const OFFLINE_DB_NAME="price-search-offline-v1",OFFLINE_DB_STORE="snapshots",OFFLINE_DATA_KEY="latest";
 let USING_OFFLINE_CACHE=false,SERVER_UNSTABLE=false;
-const OFFLINE_ITEM_FIELDS=["manage","section","category","majorCategory","product","price","priceBand","priceRaw","priceType","priceDisplay","priceAmounts","showPriceDetail","inboundDate","expiryDate","daysLeft","note","barcode","boxNo","type","store","sheet","row","exceptionMode","itemKey","overrideKey","overrideMemo"];
+const OFFLINE_ITEM_FIELDS=["manage","section","category","majorCategory","product","price","priceBand","priceRaw","priceType","priceDisplay","priceAmounts","showPriceDetail","inboundDate","expiryDate","daysLeft","note","barcode","boxNo","type","store","exceptionMode","itemKey","overrideKey","overrideMemo"];
 
 function pad(n){return String(n).padStart(2,"0")}function dateStr(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}function today(){return dateStr(new Date())}
 function yesterday(){let d=new Date();d.setDate(d.getDate()-1);return dateStr(d)}function recent7(){let d=new Date();d.setDate(d.getDate()-6);return dateStr(d)}
@@ -208,7 +208,7 @@ function openOfflineDB(){
   });
 }
 function rebuildOfflineSearch(item){
-  return [item.sheet,item.inboundDate,item.majorCategory,item.category,item.product,item.priceRaw,item.priceDisplay,item.expiryDate,item.note,item.barcode,item.boxNo,item.store,item.type,item.exceptionMode,item.overrideMemo].filter(Boolean).join(" ").toLowerCase();
+  return [item.inboundDate,item.majorCategory,item.category,item.product,item.priceRaw,item.priceDisplay,item.expiryDate,item.note,item.barcode,item.boxNo,item.store,item.type,item.exceptionMode,item.overrideMemo].filter(Boolean).join(" ").toLowerCase();
 }
 function sanitizeOfflinePayload(payload){
   const items=(payload.items||[]).map(source=>{
@@ -276,7 +276,7 @@ async function clearOfflineData(){
   try{
     if("caches" in window){
       const keys=await caches.keys();
-      await Promise.all(keys.filter(key=>key.includes("-original")||key.includes("-data")).map(key=>caches.delete(key)));
+      await Promise.all(keys.filter(key=>key.includes("-data")).map(key=>caches.delete(key)));
     }
   }catch(e){}
   updateNetworkStatus();
@@ -550,34 +550,8 @@ function showRecentBox(){
 }
 function backToBoxes(){document.getElementById("workList").classList.add("hidden");document.getElementById("workHome").classList.remove("hidden");document.getElementById("workBoxInput").value="";document.getElementById("workBoxInput").focus()}
 
-async function openOriginal(sheetEncoded,rowEncoded,productEncoded,priceEncoded="",dateEncoded="",boxEncoded=""){
-  const sheet=decodeURIComponent(String(sheetEncoded||""));
-  const row=decodeURIComponent(String(rowEncoded||""));
-  const product=decodeURIComponent(String(productEncoded||""));
-  const price=decodeURIComponent(String(priceEncoded||""));
-  const inboundDate=decodeURIComponent(String(dateEncoded||""));
-  const boxNo=decodeURIComponent(String(boxEncoded||""));
-  const params=new URLSearchParams({sheet,row,product});
-  const url="/original_view?"+params.toString();
-
-  if(navigator.onLine&&!USING_OFFLINE_CACHE){window.open(url,"_blank");return}
-
-  try{
-    if("caches" in window){
-      const cached=await caches.match(url);
-      if(cached){window.open(url,"_blank");return}
-    }
-  }catch(e){}
-
-  const popup=window.open("","_blank");
-  if(!popup){alert("팝업이 차단되었습니다.");return}
-  popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>오프라인 가격 요약</title><style>*{box-sizing:border-box}body{margin:0;background:#f4f7f6;font-family:Arial,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#14201d;padding:14px}.wrap{max-width:720px;margin:auto}.tag{display:inline-block;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.card{margin-top:12px;background:#fff;border:2px solid #0f766e;border-radius:18px;padding:18px;box-shadow:0 5px 18px rgba(0,0,0,.08)}.label{font-size:12px;color:#66736f;font-weight:900;margin-top:14px}.name{font-size:22px;font-weight:950;line-height:1.4}.price{font-size:28px;color:#dc2626;font-weight:950;white-space:pre-wrap}.meta{font-size:14px;line-height:1.8}.notice{margin-top:12px;padding:12px;border-radius:13px;background:#fffbeb;color:#92400e;font-size:13px;line-height:1.55}button{margin-top:16px;width:100%;height:44px;border:0;border-radius:13px;background:#0f766e;color:#fff;font-weight:900}</style></head><body><div class="wrap"><span class="tag">오프라인 저장자료</span><div class="card"><div class="label">상품명</div><div class="name">${esc(product||"상품명 없음")}</div><div class="label">가격</div><div class="price">${esc(price||"가격 정보 없음")}</div><div class="label">자료 위치</div><div class="meta">입고일 ${esc(inboundDate||"-")}<br>박스번호 ${esc(boxNo||"-")}<br>시트 ${esc(sheet||"-")} · 행 ${esc(row||"-")}</div></div><div class="notice">전체 원본표를 이 휴대폰에서 이전에 열어둔 적이 없어 오프라인 요약만 표시합니다. 입고·배분·출고 수량 정보는 오프라인 자료에 저장되지 않습니다.</div><button onclick="window.close()">닫기</button></div></body></html>`);
-  popup.document.close();
-}
-
-function safeArg(value){return encodeURIComponent(String(value??"")).replace(/'/g,"%27")}
 function priceText(i){return i.priceDisplay||(i.price?won(i.price):(i.priceBand||"가격 정보 없음"))}
-function renderWork(rows){const root=document.getElementById("workResults");if(!rows.length){root.innerHTML='<div class="empty">상품이 없습니다.</div>';return}root.innerHTML=rows.map((i,k)=>{const multi=i.showPriceDetail||["multiple","discretion","range"].includes(i.priceType);return `<article class="card"><div class="name">${esc(i.product||"상품명 없음")}</div><div class="price ${multi?'multi':''}">${esc(priceText(i))}</div><div class="badges">${i.expiryDate?`<span class="badge ${Number(i.daysLeft)<=30?'warn':''}">유통기한 ${esc(i.expiryDate)}</span>`:""}${multi?'<span class="badge red">복합가격</span>':""}</div>${multi&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<button class="originalBtn" onclick="openOriginal(\'${safeArg(i.sheet)}\',\'${safeArg(i.row)}\',\'${safeArg(i.product)}\',\'${safeArg(priceText(i))}\',\'${safeArg(i.inboundDate)}\',\'${safeArg(i.boxNo)}\')">📄 원본 가격리스트 보기</button><button class="detailBtn" onclick="document.getElementById('wd${k}').classList.toggle('hidden')">자세히 보기</button><div id="wd${k}" class="detailBox hidden">입고일: ${esc(i.inboundDate||"-")}
+function renderWork(rows){const root=document.getElementById("workResults");if(!rows.length){root.innerHTML='<div class="empty">상품이 없습니다.</div>';return}root.innerHTML=rows.map((i,k)=>{const multi=i.showPriceDetail||["multiple","discretion","range"].includes(i.priceType);return `<article class="card"><div class="name">${esc(i.product||"상품명 없음")}</div><div class="price ${multi?'multi':''}">${esc(priceText(i))}</div><div class="badges">${i.expiryDate?`<span class="badge ${Number(i.daysLeft)<=30?'warn':''}">유통기한 ${esc(i.expiryDate)}</span>`:""}${multi?'<span class="badge red">복합가격</span>':""}</div>${multi&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<button class="detailBtn" onclick="document.getElementById('wd${k}').classList.toggle('hidden')">자세히 보기</button><div id="wd${k}" class="detailBox hidden">입고일: ${esc(i.inboundDate||"-")}
 박스번호: ${esc(i.boxNo||"-")}
 분류: ${esc(i.category||"-")}
 바코드: ${esc(i.barcode||"-")}
@@ -633,7 +607,7 @@ function search(){
   }
   renderSearch(rows);
 }
-function renderSearch(rows){document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;const root=document.getElementById("results");if(!rows.length){root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return}root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>`<article class="card"><div class="name">${esc(i.product||"")}${searchMode==="smart"&&i._smartScore?`<span class="scoreBadge">일치도 ${Math.min(100,Math.round(i._smartScore))}</span>`:""}</div><div class="price">${esc(priceText(i))}</div>${searchMode==="smart"&&i._smartReasons?.length?`<div class="smartHint" style="margin:8px 0 0">검색 연결: ${esc(i._smartReasons.join(" · "))}</div>`:""}<div class="badges"><span class="badge">${esc(i.inboundDate||"-")}</span><span class="badge">박스 ${esc(i.boxNo||"-")}</span>${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}</div>${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<button class="originalBtn" onclick="openOriginal(\'${safeArg(i.sheet)}\',\'${safeArg(i.row)}\',\'${safeArg(i.product)}\',\'${safeArg(priceText(i))}\',\'${safeArg(i.inboundDate)}\',\'${safeArg(i.boxNo)}\')">📄 원본 가격리스트 보기</button><div class="expiryEdit"><input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}"><button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button></div><div class="exceptionBtns"><button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button><button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button><button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button></div></article>`).join("");if(rows.length>visibleLimit)root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>')}
+function renderSearch(rows){document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;const root=document.getElementById("results");if(!rows.length){root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return}root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>`<article class="card"><div class="name">${esc(i.product||"")}${searchMode==="smart"&&i._smartScore?`<span class="scoreBadge">일치도 ${Math.min(100,Math.round(i._smartScore))}</span>`:""}</div><div class="price">${esc(priceText(i))}</div>${searchMode==="smart"&&i._smartReasons?.length?`<div class="smartHint" style="margin:8px 0 0">검색 연결: ${esc(i._smartReasons.join(" · "))}</div>`:""}<div class="badges"><span class="badge">${esc(i.inboundDate||"-")}</span><span class="badge">박스 ${esc(i.boxNo||"-")}</span>${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}</div>${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<div class="expiryEdit"><input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}"><button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button></div><div class="exceptionBtns"><button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button><button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button><button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button></div></article>`).join("");if(rows.length>visibleLimit)root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>')}
 async function saveExpiry(key,id){if(!requireOnline("유통기한 저장은 온라인 연결 후 사용할 수 있습니다."))return;const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const value=document.getElementById(id).value;if(!value)return alert("유통기한을 선택해 주세요.");const r=await fetch(`/set_store_item_expiry/${key}/${encodeURIComponent(store)}/${value}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"저장 실패");await loadData({autoRecover:false});alert("저장 완료")}
 async function setException(key,mode){if(!requireOnline("관리방식 변경은 온라인 연결 후 사용할 수 있습니다."))return;const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${key}/${mode}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"설정 실패");await loadData({autoRecover:false});alert("설정 완료")}
 function downloadExcel(){if(!requireOnline("엑셀 다운로드는 온라인 연결 후 사용할 수 있습니다."))return;const p=new URLSearchParams({mode:searchMode,q:document.getElementById("q").value||"",start:document.getElementById("dateStart").value||"",end:document.getElementById("dateEnd").value||"",menu:currentMenu,store:getStore()});location.href="/download_excel?"+p}

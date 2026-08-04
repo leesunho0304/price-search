@@ -1,6 +1,5 @@
-const VERSION="price-search-v29";
+const VERSION="price-search-v30";
 const SHELL_CACHE=`${VERSION}-shell`;
-const ORIGINAL_CACHE=`${VERSION}-original`;
 const APP_SHELL=["/","/index.html","/manifest.webmanifest","/app-icon.svg","/offline.html"];
 
 self.addEventListener("install",event=>{
@@ -43,12 +42,6 @@ self.addEventListener("fetch",event=>{
   if(request.method!=="GET")return;
   const url=new URL(request.url);
   if(url.origin!==self.location.origin)return;
-
-
-  if(url.pathname==="/original_view"){
-    event.respondWith(networkFirst(request,ORIGINAL_CACHE,"/offline.html"));
-    return;
-  }
 
   if(request.mode==="navigate"){
     event.respondWith(networkFirst(request,SHELL_CACHE,"/index.html"));
