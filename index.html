@@ -681,9 +681,46 @@ async function syncData(opt={}){
     updateNetworkStatus()
   }
 }
+
+function removeLegacyOriginalButtons(){
+  document.querySelectorAll("button,a").forEach(element=>{
+    const text=(element.textContent||"").replace(/\s+/g," ").trim();
+    const action=(element.getAttribute("onclick")||"").trim();
+
+    if(
+      text.includes("원본 가격리스트") ||
+      text.includes("원본 보기") ||
+      action.includes("openOriginal")
+    ){
+      element.remove();
+    }
+  });
+}
+
 async function registerServiceWorker(){
-  if("serviceWorker" in navigator){
-    try{await navigator.serviceWorker.register("/service-worker.js",{scope:"/"})}catch(e){console.warn("서비스워커 등록 실패",e)}
+  if(!("serviceWorker" in navigator))return;
+
+  try{
+    let reloading=false;
+
+    navigator.serviceWorker.addEventListener("controllerchange",()=>{
+      if(reloading)return;
+      reloading=true;
+
+      if(sessionStorage.getItem("swV31Reloaded")!=="1"){
+        sessionStorage.setItem("swV31Reloaded","1");
+        window.location.reload();
+      }
+    });
+
+    const registration=await navigator.serviceWorker.register(
+      "/service-worker.js",
+      {scope:"/",updateViaCache:"none"}
+    );
+
+    await registration.update();
+  }catch(e){
+    console.warn("서비스워커 등록 실패",e);
   }
 }
 async function handleOnline(){
@@ -692,7 +729,9 @@ async function handleOnline(){
 }
 function handleOffline(){updateNetworkStatus()}
 async function start(){
+  removeLegacyOriginalButtons();
   await registerServiceWorker();
+  removeLegacyOriginalButtons();
   window.addEventListener("online",handleOnline);
   window.addEventListener("offline",handleOffline);
   initStore();updateNetworkStatus();

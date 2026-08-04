@@ -610,12 +610,20 @@ def sync_data():
 
 @app.route("/")
 def index():
-    return send_from_directory(".", "index.html")
+    response = send_from_directory(".", "index.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/index.html")
 def index_file():
-    return send_from_directory(".", "index.html")
+    response = send_from_directory(".", "index.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/service-worker.js")
