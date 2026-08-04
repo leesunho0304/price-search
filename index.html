@@ -23,7 +23,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .modeSwitch button{height:47px;border-radius:15px;border:1px solid var(--line);background:#f8faf9;color:#34413d;font-weight:900}
 .modeSwitch button.active{background:var(--green);color:#fff;border-color:var(--green)}
 .hidden{display:none!important}
-.todayLabel{text-align:center;color:var(--green);font-size:12px;font-weight:900;margin:2px 0 12px}
+.workDateRow{display:grid;grid-template-columns:1fr 66px;gap:8px;align-items:end;margin-bottom:8px}.workDateField label{display:block;font-size:11px;color:var(--muted);font-weight:900;margin:0 0 4px 2px}.workDateField select{width:100%;height:44px;border:2px solid #cbd8d4;border-radius:13px;background:#fff;padding:0 10px;font-size:15px;font-weight:800;color:#17211f;outline:none}.workDateField select:focus{border-color:var(--green)}.todayWorkBtn{height:44px;border:0;border-radius:13px;background:#e8f7f3;color:#0b6f63;font-weight:900}.todayLabel{text-align:center;color:var(--green);font-size:12px;font-weight:900;margin:2px 0 12px}
 .title{font-size:17px;font-weight:900;margin-bottom:5px}.sub{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px}
 .boxJump{display:block;margin-bottom:11px}.boxJump input{height:46px;border:2px solid #cbd8d4;border-radius:14px;padding:0 12px;font-size:17px;outline:none}.boxJump input:focus{border-color:var(--green)}.boxJump button{border:0;border-radius:14px;background:var(--green);color:#fff;font-weight:900}.boxGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
 .boxBtn{min-height:56px;border:1px solid var(--line);border-radius:15px;background:#fff;font-size:18px;font-weight:900;color:#17211f;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -50,7 +50,7 @@ button,input,select{font:inherit}button{cursor:pointer}
 .exceptionBtns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}.exceptionBtns button{height:36px;border:0;border-radius:11px;color:#fff;font-size:12px;font-weight:900}.manufacture{background:#f59e0b}.exclude{background:#6b7280}.expiry{background:#2563eb}
 .bottomNav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,255,.98);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
 .bottomInner{max-width:860px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.navBtn{height:50px;border:0;background:transparent;border-radius:12px;color:#5f6d69;font-size:11px;font-weight:900}.navBtn span{display:block;font-size:20px;line-height:1.05}.navBtn.active{color:var(--green);background:#ecf8f5}
-@media(max-width:430px){.headerInner{grid-template-columns:1fr 94px 62px}.logo{font-size:19px}#storeSelect{width:94px}.boxGrid{grid-template-columns:repeat(3,1fr)}.searchRow{grid-template-columns:100px 1fr 64px}}
+@media(max-width:430px){.workDateRow{grid-template-columns:1fr 62px}.headerInner{grid-template-columns:1fr 94px 62px}.logo{font-size:19px}#storeSelect{width:94px}.boxGrid{grid-template-columns:repeat(3,1fr)}.searchRow{grid-template-columns:100px 1fr 64px}}
 </style>
 </head>
 <body>
@@ -70,6 +70,13 @@ button,input,select{font:inherit}button{cursor:pointer}
 
   <section id="workHome">
     <div class="panel">
+      <div class="workDateRow">
+        <div class="workDateField">
+          <label for="workDateSelect">가격리스트 날짜</label>
+          <select id="workDateSelect" onchange="changeWorkDate(this.value)"></select>
+        </div>
+        <button class="todayWorkBtn" onclick="selectTodayWorkDate()">오늘</button>
+      </div>
       <div id="workDate" class="todayLabel"></div>
       <div class="title">박스번호를 선택하세요</div>
       <div class="sub">박스번호를 누르거나 직접 입력하면 상품명과 가격이 바로 표시됩니다.</div>
@@ -170,11 +177,104 @@ function initStore(){const s=document.getElementById("storeSelect");s.innerHTML=
 function updateStatus(){document.getElementById("status").innerHTML=`업데이트 <b>${esc(META.updatedAt||"-")}</b> · 상품 <b>${(META.count||RAW_DATA.length).toLocaleString()}</b>개 · 내 매장 <b>${esc(getStore()||"미선택")}</b>`}
 async function loadOverrides(){STORE_OVERRIDES={};const store=getStore();if(!store){DATA=RAW_DATA.slice();return}try{const r=await fetch(`/store_overrides/${encodeURIComponent(store)}?ts=`+Date.now()),j=await r.json();if(j.ok)STORE_OVERRIDES=j.overrides||{}}catch(e){}DATA=RAW_DATA.map(item=>{const o=STORE_OVERRIDES[item.itemKey];if(!o)return item;const x={...item,storeOverride:true};if(o.expiryDate)x.expiryDate=o.expiryDate;return x})}
 function setMainMode(mode){mainMode=mode;const w=mode==="work";document.getElementById("workHome").classList.toggle("hidden",!w);document.getElementById("workList").classList.add("hidden");document.getElementById("searchArea").classList.toggle("hidden",w);document.getElementById("workTop").classList.toggle("active",w);document.getElementById("searchTop").classList.toggle("active",!w);document.getElementById("navWork").classList.toggle("active",w);document.getElementById("navSearch").classList.toggle("active",!w);if(w)renderBoxes();else search()}
-function latestInboundDate(){const dates=DATA.map(x=>x.inboundDate).filter(Boolean).sort();return dates.length?dates[dates.length-1]:""}
-function workRows(){const t=today(),todayRows=DATA.filter(x=>x.inboundDate===t);currentWorkDate=todayRows.length?t:latestInboundDate();return DATA.filter(x=>x.inboundDate===currentWorkDate)}
+function availableWorkDates(){
+  return [...new Set(
+    DATA.map(item=>String(item.inboundDate||"").trim()).filter(Boolean)
+  )].sort((a,b)=>b.localeCompare(a));
+}
+
+function workDateLabel(date){
+  if(date===today())return `${date} (오늘)`;
+  if(date===yesterday())return `${date} (어제)`;
+  return date;
+}
+
+function populateWorkDateSelect(preferredDate=""){
+  const select=document.getElementById("workDateSelect");
+  const dates=availableWorkDates();
+
+  if(!dates.length){
+    currentWorkDate="";
+    select.innerHTML='<option value="">입고 날짜 없음</option>';
+    select.disabled=true;
+    localStorage.removeItem("selectedWorkDate");
+    return;
+  }
+
+  select.disabled=false;
+
+  const saved=localStorage.getItem("selectedWorkDate")||"";
+  let selected=preferredDate;
+
+  if(!dates.includes(selected)){
+    if(dates.includes(saved))selected=saved;
+    else if(dates.includes(today()))selected=today();
+    else selected=dates[0];
+  }
+
+  const countByDate={};
+  DATA.forEach(item=>{
+    const date=String(item.inboundDate||"").trim();
+    if(date)countByDate[date]=(countByDate[date]||0)+1;
+  });
+
+  select.innerHTML=dates.map(date=>
+    `<option value="${esc(date)}">${esc(workDateLabel(date))} · ${(countByDate[date]||0).toLocaleString()}개</option>`
+  ).join("");
+
+  select.value=selected;
+  currentWorkDate=selected;
+  localStorage.setItem("selectedWorkDate",selected);
+}
+
+function changeWorkDate(date){
+  const dates=availableWorkDates();
+  if(!dates.includes(date))return;
+
+  currentWorkDate=date;
+  localStorage.setItem("selectedWorkDate",date);
+
+  clearTimeout(boxInputTimer);
+  document.getElementById("workBoxInput").value="";
+  document.getElementById("workList").classList.add("hidden");
+  document.getElementById("workHome").classList.remove("hidden");
+
+  renderBoxes();
+}
+
+function selectTodayWorkDate(){
+  const dates=availableWorkDates();
+
+  if(!dates.includes(today())){
+    alert("오늘 날짜의 가격리스트가 없습니다.");
+    return;
+  }
+
+  const select=document.getElementById("workDateSelect");
+  select.value=today();
+  changeWorkDate(today());
+}
+
+function workRows(){
+  const dates=availableWorkDates();
+
+  if(!currentWorkDate || !dates.includes(currentWorkDate)){
+    populateWorkDateSelect(currentWorkDate);
+  }
+
+  return DATA.filter(item=>item.inboundDate===currentWorkDate);
+}
 function renderBoxes(){
+  populateWorkDateSelect(currentWorkDate);
   const rows=workRows();
-  document.getElementById("workDate").innerText=currentWorkDate?`${currentWorkDate} 가격리스트`:"입고 데이터 없음";
+
+  const dateNote=currentWorkDate===today()
+    ?"오늘"
+    :(currentWorkDate===yesterday()?"어제":"선택 날짜");
+
+  document.getElementById("workDate").innerText=currentWorkDate
+    ?`${currentWorkDate} · ${dateNote} 가격리스트`
+    :"입고 데이터 없음";
 
   const detected=rows
     .map(x=>Number(normalizeBox(x.boxNo)))
@@ -239,8 +339,53 @@ function jumpToBox(){
   openBox(String(Number(value)));
 }
 
-function openBox(n){let recent=JSON.parse(localStorage.getItem("recentBoxes")||"[]").filter(x=>x!==n);recent.unshift(n);localStorage.setItem("recentBoxes",JSON.stringify(recent.slice(0,8)));const rows=workRows().filter(x=>normalizeBox(x.boxNo)===normalizeBox(n));document.getElementById("workHome").classList.add("hidden");document.getElementById("workList").classList.remove("hidden");document.getElementById("boxTitle").innerText=`${n}번 박스`;document.getElementById("boxCount").innerText=`총 ${rows.length}개 상품`;renderWork(rows)}
-function showRecentBox(){const a=JSON.parse(localStorage.getItem("recentBoxes")||"[]");if(!a.length)return alert("최근 본 박스가 없습니다.");openBox(a[0])}
+function openBox(n){
+  const normalized=normalizeBox(n);
+  const recentRaw=JSON.parse(localStorage.getItem("recentWorkBoxes")||"[]");
+  const recent=recentRaw.filter(item=>
+    !(String(item.date||"")===currentWorkDate && normalizeBox(item.box)===normalized)
+  );
+
+  recent.unshift({date:currentWorkDate,box:normalized});
+  localStorage.setItem("recentWorkBoxes",JSON.stringify(recent.slice(0,8)));
+
+  const rows=workRows().filter(item=>normalizeBox(item.boxNo)===normalized);
+
+  document.getElementById("workHome").classList.add("hidden");
+  document.getElementById("workList").classList.remove("hidden");
+  document.getElementById("boxTitle").innerText=`${normalized}번 박스`;
+  document.getElementById("boxCount").innerText=`${currentWorkDate} · 총 ${rows.length}개 상품`;
+  renderWork(rows);
+}
+
+function showRecentBox(){
+  let recent=JSON.parse(localStorage.getItem("recentWorkBoxes")||"[]");
+
+  // 이전 버전의 최근 박스 기록도 호환한다.
+  if(!recent.length){
+    const oldRecent=JSON.parse(localStorage.getItem("recentBoxes")||"[]");
+    if(oldRecent.length){
+      recent=[{date:currentWorkDate,box:oldRecent[0]}];
+    }
+  }
+
+  if(!recent.length){
+    alert("최근 본 박스가 없습니다.");
+    return;
+  }
+
+  const item=recent[0];
+  const dates=availableWorkDates();
+
+  if(item.date && dates.includes(item.date)){
+    const select=document.getElementById("workDateSelect");
+    select.value=item.date;
+    currentWorkDate=item.date;
+    localStorage.setItem("selectedWorkDate",item.date);
+  }
+
+  openBox(item.box);
+}
 function backToBoxes(){document.getElementById("workList").classList.add("hidden");document.getElementById("workHome").classList.remove("hidden");document.getElementById("workBoxInput").value="";document.getElementById("workBoxInput").focus()}
 
 function openOriginal(sheetEncoded,rowEncoded,productEncoded){
