@@ -1,4 +1,4 @@
-const VERSION="price-search-v31";
+const VERSION="price-search-v32";
 const SHELL_CACHE=`${VERSION}-shell`;
 const APP_SHELL=["/","/index.html","/manifest.webmanifest","/app-icon.svg","/offline.html"];
 
