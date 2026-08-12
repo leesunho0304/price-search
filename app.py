@@ -908,6 +908,17 @@ def get_store_overrides(store_name):
 
 
 
+
+def normalize_discount_product_name(value):
+    """
+    가격 인하 요청서의 중복 판정용 상품명 정규화.
+    입고일은 중복 판단에 사용하지 않는다.
+    공백/기호/영문 대소문자 차이 정도는 같은 상품명으로 본다.
+    """
+    text = clean_text(value).lower()
+    text = re.sub(r"[\s\-_./·ㆍ()\[\]{}]+", "", text)
+    return text
+
 def apply_store_override_to_export(item, store_name, exceptions):
     """엑셀 다운로드 시 선택 매장의 수정 유통기한을 반영한다."""
     row = dict(item)
@@ -957,8 +968,9 @@ def export_menu_match(item, menu):
 @app.route("/download_excel")
 def download_excel():
     """
-    현재 화면의 검색어·날짜·분류·선택 매장을 반영한 취합 리스트를 엑셀로 내려준다.
-    필터가 없으면 전체 가격리스트가 다운로드된다.
+    현재 화면의 검색어·날짜·분류 조건을 반영한 가격 인하 요청서를 내려준다.
+    상품명과 유통기한이 모두 같은 경우 입고일과 관계없이 중복을 제외한다.
+    유통기한이 없는 상품은 중복 제거하지 않는다.
     """
     try:
         if not Path(DATA_FILE).exists():
@@ -1001,6 +1013,32 @@ def download_excel():
                         continue
 
             filtered.append(item)
+
+        # 가격 인하 요청서 중복 제거
+        # 기준: 상품명 + 유통기한
+        # - 입고일이 달라도 상품명과 유통기한이 같으면 1건만 남긴다.
+        # - 유통기한이 비어 있는 상품은 임의로 합치지 않고 모두 유지한다.
+        original_filtered_count = len(filtered)
+        deduped = []
+        seen_discount_keys = set()
+
+        for item in filtered:
+            product_name = clean_text(item.get("product", ""))
+            expiry_date = clean_text(item.get("expiryDate", ""))
+
+            if product_name and expiry_date:
+                dedupe_key = (
+                    normalize_discount_product_name(product_name),
+                    expiry_date,
+                )
+                if dedupe_key in seen_discount_keys:
+                    continue
+                seen_discount_keys.add(dedupe_key)
+
+            deduped.append(item)
+
+        filtered = deduped
+        duplicate_removed_count = original_filtered_count - len(filtered)
 
         import xlsxwriter
 
@@ -1080,12 +1118,16 @@ def download_excel():
             title_fmt
         )
 
-        store_label = store_name or "전체"
         menu_label = menu if menu and menu != "전체상품" else "전체"
+        duplicate_text = (
+            f" | 중복 제외 {duplicate_removed_count:,}건"
+            if duplicate_removed_count > 0
+            else ""
+        )
         info_text = (
-            f"매장: {store_label} | "
             f"분류: {menu_label} | "
-            f"총 {len(filtered):,}건 | "
+            f"총 {len(filtered):,}건"
+            f"{duplicate_text} | "
             f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
         sheet.merge_range(
