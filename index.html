@@ -72,6 +72,9 @@ button,input,select{font:inherit}button{cursor:pointer}
 .smartHint{margin-top:8px;padding:8px 10px;border-radius:12px;background:#eef7ff;color:#1d4ed8;font-size:12px;line-height:1.45}.scoreBadge{display:inline-flex;margin-left:6px;padding:3px 7px;border-radius:999px;background:#e0f2fe;color:#075985;font-size:10px;font-weight:900}.count{font-size:13px;color:#47544f;margin:3px 2px 9px}.empty{background:#fff;border:1px dashed #cbd5d1;border-radius:17px;padding:22px;color:#66736f;line-height:1.7}
 .expiryEdit{display:grid;grid-template-columns:1fr 76px;gap:6px;margin-top:10px}.expiryEdit input{height:38px;border:1px solid #ccd7d4;border-radius:11px;padding:0 8px}.expiryEdit button{border:0;border-radius:11px;background:var(--green);color:#fff;font-weight:900}
 .exceptionBtns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px}.exceptionBtns button{height:36px;border:0;border-radius:11px;color:#fff;font-size:12px;font-weight:900}.manufacture{background:#f59e0b}.exclude{background:#6b7280}.expiry{background:#2563eb}
+.discountDoneBtn{width:100%;height:40px;margin-top:7px;border:1px solid #b9d6ce;border-radius:11px;background:#f2faf8;color:#0b6f63;font-size:12px;font-weight:950}
+.discountDoneBtn.done{background:#0f766e;border-color:#0f766e;color:#fff}
+.discountDoneStatus{margin:8px 0 0;padding:8px 10px;border-radius:11px;background:#f3f7f6;color:#52625e;font-size:11px;font-weight:800;text-align:center}
 .bottomNav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,255,.98);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
 .bottomInner{max-width:860px;margin:auto;display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.navBtn{height:50px;border:0;background:transparent;border-radius:12px;color:#5f6d69;font-size:11px;font-weight:900}.navBtn span{display:block;font-size:20px;line-height:1.05}.navBtn.active{color:var(--green);background:#ecf8f5}
 @media(max-width:430px){.workDateRow{grid-template-columns:1fr 62px}.headerInner{grid-template-columns:1fr 94px 62px}.logo{font-size:19px}#storeSelect{width:94px}.boxGrid{grid-template-columns:repeat(3,1fr)}.searchRow{grid-template-columns:100px 1fr 64px}}
@@ -147,6 +150,7 @@ button,input,select{font:inherit}button{cursor:pointer}
         <button class="detailSearchBtn" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
         <button class="downloadBtn" onclick="downloadExcel()">가격 인하 요청서 엑셀 다운로드</button>
       </div>
+      <div id="discountDoneStatus" class="discountDoneStatus">가격인하 완료 등록 0건 · 다음 요청서에서 자동 제외</div>
       <div id="detailArea" class="hidden">
         <div class="quickRow">
           <button id="allBtn" class="active" onclick="setQuickDate('all')">전체</button>
@@ -190,6 +194,75 @@ let RAW_DATA=[],DATA=[],META={},STORE_OVERRIDES={},mainMode="work",searchMode="p
 const OFFLINE_DB_NAME="price-search-offline-v1",OFFLINE_DB_STORE="snapshots",OFFLINE_DATA_KEY="latest";
 let USING_OFFLINE_CACHE=false,SERVER_UNSTABLE=false;
 const OFFLINE_ITEM_FIELDS=["manage","section","category","majorCategory","product","price","priceBand","priceRaw","priceType","priceDisplay","priceAmounts","showPriceDetail","inboundDate","expiryDate","daysLeft","note","barcode","boxNo","type","store","exceptionMode","itemKey","overrideKey","overrideMemo"];
+
+
+const DISCOUNT_DONE_STORAGE_KEY="priceReductionDoneV1";
+
+function normalizeDiscountProductName(value){
+  return String(value??"")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s\-_.\/·ㆍ()[\]{}]+/g,"");
+}
+
+function makeDiscountDoneKey(product,expiryDate){
+  const normalizedProduct=normalizeDiscountProductName(product);
+  const normalizedExpiry=String(expiryDate||"").trim()||"__NO_EXPIRY__";
+  return `${normalizedProduct}|||${normalizedExpiry}`;
+}
+
+function loadDiscountDoneMap(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(DISCOUNT_DONE_STORAGE_KEY)||"{}");
+    return saved&&typeof saved==="object"&&!Array.isArray(saved)?saved:{};
+  }catch(e){
+    return {};
+  }
+}
+
+function saveDiscountDoneMap(data){
+  localStorage.setItem(DISCOUNT_DONE_STORAGE_KEY,JSON.stringify(data));
+  updateDiscountDoneStatus();
+}
+
+function isDiscountDone(item){
+  if(!item||!item.product)return false;
+  const key=makeDiscountDoneKey(item.product,item.expiryDate);
+  return Boolean(loadDiscountDoneMap()[key]);
+}
+
+function toggleDiscountDone(productEncoded,expiryEncoded){
+  const product=decodeURIComponent(String(productEncoded||""));
+  const expiryDate=decodeURIComponent(String(expiryEncoded||""));
+  if(!product)return;
+
+  const data=loadDiscountDoneMap();
+  const key=makeDiscountDoneKey(product,expiryDate);
+
+  if(data[key]){
+    delete data[key];
+  }else{
+    data[key]={
+      product,
+      expiryDate,
+      markedAt:new Date().toISOString()
+    };
+  }
+
+  saveDiscountDoneMap(data);
+  search();
+}
+
+function updateDiscountDoneStatus(){
+  const el=document.getElementById("discountDoneStatus");
+  if(!el)return;
+  const count=Object.keys(loadDiscountDoneMap()).length;
+  el.textContent=`가격인하 완료 등록 ${count.toLocaleString()}건 · 다음 요청서에서 자동 제외`;
+}
+
+function getDiscountDoneKeys(){
+  return Object.keys(loadDiscountDoneMap());
+}
 
 function pad(n){return String(n).padStart(2,"0")}function dateStr(d){return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`}function today(){return dateStr(new Date())}
 function yesterday(){let d=new Date();d.setDate(d.getDate()-1);return dateStr(d)}function recent7(){let d=new Date();d.setDate(d.getDate()-6);return dateStr(d)}
@@ -734,10 +807,100 @@ function search(){
   }
   renderSearch(rows);
 }
-function renderSearch(rows){document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;const root=document.getElementById("results");if(!rows.length){root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return}root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>`<article class="card"><div class="name">${esc(i.product||"")}${searchMode==="smart"&&i._smartScore?`<span class="scoreBadge">일치도 ${Math.min(100,Math.round(i._smartScore))}</span>`:""}</div><div class="price">${esc(priceText(i))}</div>${searchMode==="smart"&&i._smartReasons?.length?`<div class="smartHint" style="margin:8px 0 0">검색 연결: ${esc(i._smartReasons.join(" · "))}</div>`:""}<div class="badges"><span class="badge">${esc(i.inboundDate||"-")}</span><span class="badge">박스 ${esc(i.boxNo||"-")}</span>${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}</div>${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}<div class="expiryEdit"><input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}"><button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button></div><div class="exceptionBtns"><button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button><button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button><button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button></div></article>`).join("");if(rows.length>visibleLimit)root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>')}
+function renderSearch(rows){
+  updateDiscountDoneStatus();
+  document.getElementById("count").innerHTML=`검색 결과 <b>${rows.length.toLocaleString()}</b>건`;
+  const root=document.getElementById("results");
+  if(!rows.length){
+    root.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';
+    return;
+  }
+
+  root.innerHTML=rows.slice(0,visibleLimit).map((i,k)=>{
+    const discountDone=isDiscountDone(i);
+    const sangseng=[i.majorCategory,i.category,i.type].some(v=>String(v||"").includes("상생"));
+
+    return `<article class="card">
+      <div class="name">${esc(i.product||"")}${searchMode==="smart"&&i._smartScore?`<span class="scoreBadge">일치도 ${Math.min(100,Math.round(i._smartScore))}</span>`:""}</div>
+      <div class="price">${esc(priceText(i))}</div>
+      ${searchMode==="smart"&&i._smartReasons?.length?`<div class="smartHint" style="margin:8px 0 0">검색 연결: ${esc(i._smartReasons.join(" · "))}</div>`:""}
+      <div class="badges">
+        <span class="badge">${esc(i.inboundDate||"-")}</span>
+        <span class="badge">박스 ${esc(i.boxNo||"-")}</span>
+        ${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}
+        ${sangseng?'<span class="badge red">상생 · 인하요청 제외</span>':""}
+        ${discountDone?'<span class="badge">가격인하 완료</span>':""}
+      </div>
+      ${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}
+      <button
+        class="discountDoneBtn${discountDone?" done":""}"
+        onclick="toggleDiscountDone('${encodeURIComponent(i.product||"")}','${encodeURIComponent(i.expiryDate||"")}')">
+        ${discountDone?"✓ 가격인하 완료됨 · 누르면 해제":"✓ 가격인하 완료로 체크"}
+      </button>
+      <div class="expiryEdit">
+        <input id="ex${k}" type="date" value="${esc(i.expiryDate||"")}">
+        <button onclick="saveExpiry('${encodeURIComponent(i.itemKey)}','ex${k}')">저장</button>
+      </div>
+      <div class="exceptionBtns">
+        <button class="manufacture" onclick="setException('${encodeURIComponent(i.itemKey)}','manufacture')">제조일</button>
+        <button class="exclude" onclick="setException('${encodeURIComponent(i.itemKey)}','exclude')">관리제외</button>
+        <button class="expiry" onclick="setException('${encodeURIComponent(i.itemKey)}','expiry')">유통기한</button>
+      </div>
+    </article>`;
+  }).join("");
+
+  if(rows.length>visibleLimit){
+    root.insertAdjacentHTML("beforeend",'<button class="secondaryBtn" onclick="visibleLimit+=150;search()">더보기</button>');
+  }
+}
 async function saveExpiry(key,id){if(!requireOnline("유통기한 저장은 온라인 연결 후 사용할 수 있습니다."))return;const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const value=document.getElementById(id).value;if(!value)return alert("유통기한을 선택해 주세요.");const r=await fetch(`/set_store_item_expiry/${key}/${encodeURIComponent(store)}/${value}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"저장 실패");await loadData({autoRecover:false});alert("저장 완료")}
 async function setException(key,mode){if(!requireOnline("관리방식 변경은 온라인 연결 후 사용할 수 있습니다."))return;const store=getStore();if(!store)return alert("상단에서 내 매장을 선택해 주세요.");const r=await fetch(`/set_item_exception/STORE%7C${encodeURIComponent(store)}%7C${key}/${mode}?ts=`+Date.now()),j=await r.json();if(!j.ok)return alert(j.message||"설정 실패");await loadData({autoRecover:false});alert("설정 완료")}
-function downloadExcel(){if(!requireOnline("엑셀 다운로드는 온라인 연결 후 사용할 수 있습니다."))return;const p=new URLSearchParams({mode:searchMode,q:document.getElementById("q").value||"",start:document.getElementById("dateStart").value||"",end:document.getElementById("dateEnd").value||"",menu:currentMenu,store:getStore()});location.href="/download_excel?"+p}
+async function downloadExcel(){
+  if(!requireOnline("엑셀 다운로드는 온라인 연결 후 사용할 수 있습니다."))return;
+
+  const payload={
+    mode:searchMode,
+    q:document.getElementById("q").value||"",
+    start:document.getElementById("dateStart").value||"",
+    end:document.getElementById("dateEnd").value||"",
+    menu:currentMenu,
+    store:getStore(),
+    excludeKeys:getDiscountDoneKeys()
+  };
+
+  try{
+    const response=await fetch("/download_excel",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+
+    if(!response.ok){
+      let message="엑셀 다운로드에 실패했습니다.";
+      try{
+        const data=await response.json();
+        message=data.message||message;
+      }catch(e){}
+      throw new Error(message);
+    }
+
+    const blob=await response.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+
+    const disposition=response.headers.get("Content-Disposition")||"";
+    const filenameMatch=disposition.match(/filename="?([^";]+)"?/i);
+    a.download=filenameMatch?.[1]||`가격인하_취합_${today().replaceAll("-","")}.xlsx`;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(e){
+    alert(e.message||String(e));
+  }
+}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
 async function fetchData(){
   let networkError=null;
@@ -834,8 +997,8 @@ async function registerServiceWorker(){
       if(reloading)return;
       reloading=true;
 
-      if(sessionStorage.getItem("swV32Reloaded")!=="1"){
-        sessionStorage.setItem("swV32Reloaded","1");
+      if(sessionStorage.getItem("swV34Reloaded")!=="1"){
+        sessionStorage.setItem("swV34Reloaded","1");
         window.location.reload();
       }
     });
@@ -857,6 +1020,7 @@ async function handleOnline(){
 function handleOffline(){updateNetworkStatus()}
 async function start(){
   removeLegacyOriginalButtons();
+  updateDiscountDoneStatus();
   await registerServiceWorker();
   removeLegacyOriginalButtons();
   window.addEventListener("online",handleOnline);

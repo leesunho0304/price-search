@@ -919,6 +919,31 @@ def normalize_discount_product_name(value):
     text = re.sub(r"[\s\-_./·ㆍ()\[\]{}]+", "", text)
     return text
 
+
+def make_discount_done_key(product_name, expiry_date=""):
+    """
+    가격인하 완료 이력과 다운로드 제외 판정에 공통으로 사용하는 키.
+    - 유통기한이 있으면: 상품명 + 유통기한
+    - 유통기한이 없으면: 상품명만
+    """
+    normalized_product = normalize_discount_product_name(product_name)
+    normalized_expiry = clean_text(expiry_date) or "__NO_EXPIRY__"
+    return f"{normalized_product}|||{normalized_expiry}"
+
+
+def is_sangseng_item(item):
+    """
+    원본 '상품 분류' 계열 값에 '상생'이 포함된 상품인지 판정.
+    majorCategory는 시트의 원본 분류값이므로 가장 우선적으로 확인한다.
+    """
+    classification_text = " ".join([
+        clean_text(item.get("majorCategory", "")),
+        clean_text(item.get("category", "")),
+        clean_text(item.get("type", "")),
+    ])
+    return "상생" in classification_text
+
+
 def apply_store_override_to_export(item, store_name, exceptions):
     """엑셀 다운로드 시 선택 매장의 수정 유통기한을 반영한다."""
     row = dict(item)
@@ -965,12 +990,13 @@ def export_menu_match(item, menu):
     return item.get("section") == menu
 
 
-@app.route("/download_excel")
+@app.route("/download_excel", methods=["GET", "POST"])
 def download_excel():
     """
     현재 화면의 검색어·날짜·분류 조건을 반영한 가격 인하 요청서를 내려준다.
     상품명과 유통기한이 모두 같은 경우 입고일과 관계없이 중복을 제외한다.
-    유통기한이 없는 상품은 중복 제거하지 않는다.
+    사용자가 가격인하 완료로 체크한 상품은 다음 다운로드부터 제외한다.
+    상품 분류에 '상생'이 포함된 상품은 자동 제외한다.
     """
     try:
         if not Path(DATA_FILE).exists():
@@ -982,14 +1008,31 @@ def download_excel():
         items = source.get("items", [])
         exceptions = load_exceptions()
 
-        search_mode = clean_text(request.args.get("mode", "product"))
-        query = clean_text(request.args.get("q", ""))
-        date_start = clean_text(request.args.get("start", ""))
-        date_end = clean_text(request.args.get("end", ""))
-        menu = clean_text(request.args.get("menu", "전체상품"))
-        store_name = clean_text(request.args.get("store", ""))
+        body = request.get_json(silent=True) if request.method == "POST" else {}
+        body = body if isinstance(body, dict) else {}
+
+        def request_value(name, default=""):
+            if request.method == "POST" and name in body:
+                return clean_text(body.get(name, default))
+            return clean_text(request.args.get(name, default))
+
+        search_mode = request_value("mode", "product")
+        query = request_value("q", "")
+        date_start = request_value("start", "")
+        date_end = request_value("end", "")
+        menu = request_value("menu", "전체상품")
+        store_name = request_value("store", "")
+
+        exclude_keys_raw = body.get("excludeKeys", []) if request.method == "POST" else []
+        exclude_keys = {
+            clean_text(value)
+            for value in exclude_keys_raw
+            if clean_text(value)
+        } if isinstance(exclude_keys_raw, list) else set()
 
         filtered = []
+        sangseng_removed_count = 0
+        already_discounted_removed_count = 0
         tokens = [x for x in query.lower().split() if x]
 
         for original in items:
@@ -1011,6 +1054,22 @@ def download_excel():
                     search_text = clean_text(item.get("search", "")).lower()
                     if not all(token in search_text for token in tokens):
                         continue
+
+            # 상품 분류에 '(상생)' 또는 '상생' 문구가 포함된 상품은
+            # 가격인하 요청서에 절대 포함하지 않는다.
+            if is_sangseng_item(item):
+                sangseng_removed_count += 1
+                continue
+
+            # 사용자가 이전에 '가격인하 완료'로 체크한 상품은
+            # 다음 가격인하 요청서부터 자동 제외한다.
+            discount_done_key = make_discount_done_key(
+                item.get("product", ""),
+                item.get("expiryDate", ""),
+            )
+            if discount_done_key in exclude_keys:
+                already_discounted_removed_count += 1
+                continue
 
             filtered.append(item)
 
@@ -1124,10 +1183,22 @@ def download_excel():
             if duplicate_removed_count > 0
             else ""
         )
+        done_text = (
+            f" | 기존 인하 제외 {already_discounted_removed_count:,}건"
+            if already_discounted_removed_count > 0
+            else ""
+        )
+        sangseng_text = (
+            f" | 상생 제외 {sangseng_removed_count:,}건"
+            if sangseng_removed_count > 0
+            else ""
+        )
         info_text = (
             f"분류: {menu_label} | "
             f"총 {len(filtered):,}건"
-            f"{duplicate_text} | "
+            f"{duplicate_text}"
+            f"{done_text}"
+            f"{sangseng_text} | "
             f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         )
         sheet.merge_range(
