@@ -337,10 +337,10 @@ def section_by_expiry(expiry):
         sec = "60일이내"
     elif days <= 90:
         sec = "90일이내"
-    elif days <= 180:
-        sec = "180일이내"
-    else:
+    elif days >= 180:
         sec = "장기재고"
+    else:
+        sec = "전체"
     return days, sec
 
 
@@ -610,43 +610,7 @@ def sync_data():
 
 @app.route("/")
 def index():
-    response = send_from_directory(".", "index.html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
-
-@app.route("/index.html")
-def index_file():
-    response = send_from_directory(".", "index.html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
-
-@app.route("/service-worker.js")
-def service_worker():
-    response = send_from_directory(".", "service-worker.js", mimetype="application/javascript")
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["Service-Worker-Allowed"] = "/"
-    return response
-
-
-@app.route("/manifest.webmanifest")
-def manifest():
-    return send_from_directory(".", "manifest.webmanifest", mimetype="application/manifest+json")
-
-
-@app.route("/offline.html")
-def offline_page():
-    return send_from_directory(".", "offline.html")
-
-
-@app.route("/app-icon.svg")
-def app_icon():
-    return send_from_directory(".", "app-icon.svg", mimetype="image/svg+xml")
+    return send_from_directory(".", "index.html")
 
 
 @app.route("/search_data.json")
@@ -908,42 +872,6 @@ def get_store_overrides(store_name):
 
 
 
-
-def normalize_discount_product_name(value):
-    """
-    가격 인하 요청서의 중복 판정용 상품명 정규화.
-    입고일은 중복 판단에 사용하지 않는다.
-    공백/기호/영문 대소문자 차이 정도는 같은 상품명으로 본다.
-    """
-    text = clean_text(value).lower()
-    text = re.sub(r"[\s\-_./·ㆍ()\[\]{}]+", "", text)
-    return text
-
-
-def make_discount_done_key(product_name, expiry_date=""):
-    """
-    가격인하 완료 이력과 다운로드 제외 판정에 공통으로 사용하는 키.
-    - 유통기한이 있으면: 상품명 + 유통기한
-    - 유통기한이 없으면: 상품명만
-    """
-    normalized_product = normalize_discount_product_name(product_name)
-    normalized_expiry = clean_text(expiry_date) or "__NO_EXPIRY__"
-    return f"{normalized_product}|||{normalized_expiry}"
-
-
-def is_sangseng_item(item):
-    """
-    원본 '상품 분류' 계열 값에 '상생'이 포함된 상품인지 판정.
-    majorCategory는 시트의 원본 분류값이므로 가장 우선적으로 확인한다.
-    """
-    classification_text = " ".join([
-        clean_text(item.get("majorCategory", "")),
-        clean_text(item.get("category", "")),
-        clean_text(item.get("type", "")),
-    ])
-    return "상생" in classification_text
-
-
 def apply_store_override_to_export(item, store_name, exceptions):
     """엑셀 다운로드 시 선택 매장의 수정 유통기한을 반영한다."""
     row = dict(item)
@@ -990,13 +918,11 @@ def export_menu_match(item, menu):
     return item.get("section") == menu
 
 
-@app.route("/download_excel", methods=["GET", "POST"])
+@app.route("/download_excel")
 def download_excel():
     """
-    현재 화면의 검색어·날짜·분류 조건을 반영한 가격 인하 요청서를 내려준다.
-    상품명과 유통기한이 모두 같은 경우 입고일과 관계없이 중복을 제외한다.
-    사용자가 가격인하 완료로 체크한 상품은 다음 다운로드부터 제외한다.
-    상품 분류에 '상생'이 포함된 상품은 자동 제외한다.
+    현재 화면의 검색어·날짜·분류·선택 매장을 반영한 취합 리스트를 엑셀로 내려준다.
+    필터가 없으면 전체 가격리스트가 다운로드된다.
     """
     try:
         if not Path(DATA_FILE).exists():
@@ -1008,31 +934,14 @@ def download_excel():
         items = source.get("items", [])
         exceptions = load_exceptions()
 
-        body = request.get_json(silent=True) if request.method == "POST" else {}
-        body = body if isinstance(body, dict) else {}
-
-        def request_value(name, default=""):
-            if request.method == "POST" and name in body:
-                return clean_text(body.get(name, default))
-            return clean_text(request.args.get(name, default))
-
-        search_mode = request_value("mode", "product")
-        query = request_value("q", "")
-        date_start = request_value("start", "")
-        date_end = request_value("end", "")
-        menu = request_value("menu", "전체상품")
-        store_name = request_value("store", "")
-
-        exclude_keys_raw = body.get("excludeKeys", []) if request.method == "POST" else []
-        exclude_keys = {
-            clean_text(value)
-            for value in exclude_keys_raw
-            if clean_text(value)
-        } if isinstance(exclude_keys_raw, list) else set()
+        search_mode = clean_text(request.args.get("mode", "product"))
+        query = clean_text(request.args.get("q", ""))
+        date_start = clean_text(request.args.get("start", ""))
+        date_end = clean_text(request.args.get("end", ""))
+        menu = clean_text(request.args.get("menu", "전체상품"))
+        store_name = clean_text(request.args.get("store", ""))
 
         filtered = []
-        sangseng_removed_count = 0
-        already_discounted_removed_count = 0
         tokens = [x for x in query.lower().split() if x]
 
         for original in items:
@@ -1055,56 +964,12 @@ def download_excel():
                     if not all(token in search_text for token in tokens):
                         continue
 
-            # 상품 분류에 '(상생)' 또는 '상생' 문구가 포함된 상품은
-            # 가격인하 요청서에 절대 포함하지 않는다.
-            if is_sangseng_item(item):
-                sangseng_removed_count += 1
-                continue
-
-            # 사용자가 이전에 '가격인하 완료'로 체크한 상품은
-            # 다음 가격인하 요청서부터 자동 제외한다.
-            discount_done_key = make_discount_done_key(
-                item.get("product", ""),
-                item.get("expiryDate", ""),
-            )
-            if discount_done_key in exclude_keys:
-                already_discounted_removed_count += 1
-                continue
-
             filtered.append(item)
-
-        # 가격 인하 요청서 중복 제거
-        # 기준: 상품명 + 유통기한
-        # - 입고일이 달라도 상품명과 유통기한이 같으면 1건만 남긴다.
-        # - 유통기한이 비어 있는 상품은 임의로 합치지 않고 모두 유지한다.
-        original_filtered_count = len(filtered)
-        deduped = []
-        seen_discount_keys = set()
-
-        for item in filtered:
-            product_name = clean_text(item.get("product", ""))
-            expiry_date = clean_text(item.get("expiryDate", ""))
-
-            if product_name and expiry_date:
-                dedupe_key = (
-                    normalize_discount_product_name(product_name),
-                    expiry_date,
-                )
-                if dedupe_key in seen_discount_keys:
-                    continue
-                seen_discount_keys.add(dedupe_key)
-
-            deduped.append(item)
-
-        filtered = deduped
-        duplicate_removed_count = original_filtered_count - len(filtered)
 
         import xlsxwriter
 
         output = io.BytesIO()
         workbook = xlsxwriter.Workbook(output, {"in_memory": True})
-        sheet = workbook.add_worksheet("취합리스트")
-
         title_fmt = workbook.add_format({
             "bold": True,
             "font_size": 16,
@@ -1171,98 +1036,96 @@ def download_excel():
             "남은 일수",
         ]
 
-        sheet.merge_range(
-            0, 0, 0, len(headers) - 1,
-            "가격인하 취합",
-            title_fmt
-        )
+        # 형태를 기준으로 기존 취합 양식을 두 시트로 분리한다.
+        # 상품명이 아닌 원본 가격리스트의 '형태' 값을 사용한다.
+        grouped = {"기증": [], "상생": []}
+        for item in filtered:
+            item_type = clean_text(item.get("type", ""))
+            if "상생" in item_type:
+                grouped["상생"].append(item)
+            elif "기증" in item_type or "기부" in item_type:
+                grouped["기증"].append(item)
 
+        store_label = store_name or "전체"
         menu_label = menu if menu and menu != "전체상품" else "전체"
-        duplicate_text = (
-            f" | 중복 제외 {duplicate_removed_count:,}건"
-            if duplicate_removed_count > 0
-            else ""
-        )
-        done_text = (
-            f" | 기존 인하 제외 {already_discounted_removed_count:,}건"
-            if already_discounted_removed_count > 0
-            else ""
-        )
-        sangseng_text = (
-            f" | 상생 제외 {sangseng_removed_count:,}건"
-            if sangseng_removed_count > 0
-            else ""
-        )
-        info_text = (
-            f"분류: {menu_label} | "
-            f"총 {len(filtered):,}건"
-            f"{duplicate_text}"
-            f"{done_text}"
-            f"{sangseng_text} | "
-            f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-        )
-        sheet.merge_range(
-            1, 0, 1, len(headers) - 1,
-            info_text,
-            info_fmt
-        )
-
-        for col, header in enumerate(headers):
-            sheet.write(2, col, header, header_fmt)
-
-        for row_idx, item in enumerate(filtered, start=3):
-            price_raw = clean_text(item.get("priceRaw", ""))
-            if not price_raw:
-                price_raw = clean_text(item.get("priceDisplay", ""))
-
-            values = [
-                clean_text(item.get("type", "")),
-                clean_text(item.get("category", "")),
-                clean_text(item.get("product", "")),
-                price_raw,
-                "",  # 인하 가격은 매장에서 직접 입력
-                clean_text(item.get("expiryDate", "")),
-                item.get("daysLeft", ""),
-            ]
-
-            sheet.write(row_idx, 0, values[0], center_fmt)
-            sheet.write(row_idx, 1, values[1], center_fmt)
-            sheet.write(row_idx, 2, values[2], text_fmt)
-            sheet.write(row_idx, 3, values[3], text_fmt)
-            sheet.write_blank(row_idx, 4, None, discount_input_fmt)
-            sheet.write(row_idx, 5, values[5], expiry_fmt)
-            sheet.write(row_idx, 6, values[6], days_fmt)
-
-            # 복합 가격·긴 상품명이 잘리지 않도록 행 높이 조절
-            line_count = max(
-                1,
-                len(str(values[2]).splitlines()),
-                len(str(values[3]).splitlines()),
-            )
-            estimated_lines = max(
-                line_count,
-                (len(str(values[2])) // 24) + 1,
-                (len(str(values[3])) // 32) + 1,
-            )
-            sheet.set_row(row_idx, max(28, min(90, 18 * estimated_lines)))
-
         widths = [11, 12, 34, 44, 17, 14, 12]
-        for idx, width in enumerate(widths):
-            sheet.set_column(idx, idx, width)
 
-        sheet.set_row(0, 30)
-        sheet.set_row(1, 24)
-        sheet.set_row(2, 30)
-        sheet.freeze_panes(3, 0)
-        sheet.autofilter(2, 0, max(2, len(filtered) + 2), len(headers) - 1)
+        # 항상 두 시트를 생성한다. 한쪽 품목이 없어도 서식과 헤더는 유지.
+        for sheet_name in ("기증", "상생"):
+            sheet_items = grouped[sheet_name]
+            sheet = workbook.add_worksheet(sheet_name)
+            sheet.merge_range(
+                0, 0, 0, len(headers) - 1,
+                f"가격인하 취합 - {sheet_name}",
+                title_fmt
+            )
+            info_text = (
+                f"매장: {store_label} | "
+                f"분류: {menu_label} | "
+                f"총 {len(sheet_items):,}건 | "
+                f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            )
+            sheet.merge_range(
+                1, 0, 1, len(headers) - 1,
+                info_text,
+                info_fmt
+            )
 
-        # 인쇄 설정: A4 가로, 한 페이지 너비
-        sheet.set_landscape()
-        sheet.set_paper(9)
-        sheet.fit_to_pages(1, 0)
-        sheet.set_margins(left=0.25, right=0.25, top=0.4, bottom=0.4)
-        sheet.repeat_rows(0, 2)
-        sheet.hide_gridlines(2)
+            for col, header in enumerate(headers):
+                sheet.write(2, col, header, header_fmt)
+
+            for row_idx, item in enumerate(sheet_items, start=3):
+                price_raw = clean_text(item.get("priceRaw", ""))
+                if not price_raw:
+                    price_raw = clean_text(item.get("priceDisplay", ""))
+
+                values = [
+                    clean_text(item.get("type", "")),
+                    clean_text(item.get("category", "")),
+                    clean_text(item.get("product", "")),
+                    price_raw,
+                    "",  # 인하 가격은 매장에서 직접 입력
+                    clean_text(item.get("expiryDate", "")),
+                    item.get("daysLeft", ""),
+                ]
+
+                sheet.write(row_idx, 0, values[0], center_fmt)
+                sheet.write(row_idx, 1, values[1], center_fmt)
+                sheet.write(row_idx, 2, values[2], text_fmt)
+                sheet.write(row_idx, 3, values[3], text_fmt)
+                sheet.write_blank(row_idx, 4, None, discount_input_fmt)
+                sheet.write(row_idx, 5, values[5], expiry_fmt)
+                sheet.write(row_idx, 6, values[6], days_fmt)
+
+                # 복합 가격·긴 상품명이 잘리지 않도록 기존 행 높이 설정 유지
+                line_count = max(
+                    1,
+                    len(str(values[2]).splitlines()),
+                    len(str(values[3]).splitlines()),
+                )
+                estimated_lines = max(
+                    line_count,
+                    (len(str(values[2])) // 24) + 1,
+                    (len(str(values[3])) // 32) + 1,
+                )
+                sheet.set_row(row_idx, max(28, min(90, 18 * estimated_lines)))
+
+            for idx, width in enumerate(widths):
+                sheet.set_column(idx, idx, width)
+
+            sheet.set_row(0, 30)
+            sheet.set_row(1, 24)
+            sheet.set_row(2, 30)
+            sheet.freeze_panes(3, 0)
+            sheet.autofilter(2, 0, max(2, len(sheet_items) + 2), len(headers) - 1)
+
+            # 인쇄 설정: A4 가로, 한 페이지 너비
+            sheet.set_landscape()
+            sheet.set_paper(9)
+            sheet.fit_to_pages(1, 0)
+            sheet.set_margins(left=0.25, right=0.25, top=0.4, bottom=0.4)
+            sheet.repeat_rows(0, 2)
+            sheet.hide_gridlines(2)
 
         workbook.close()
         output.seek(0)
@@ -1276,8 +1139,6 @@ def download_excel():
         )
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 500
-
-
 
 
 @app.route("/health")
