@@ -939,228 +939,223 @@ def export_menu_match(item, menu):
     return item.get("section") == menu
 
 
+def build_discount_workbook(grouped, store_label, menu_label):
+    """외부 엑셀 라이브러리 없이 기증/상생 2개 시트 XLSX를 생성한다.
+
+    서버에 xlsxwriter가 설치되어 있지 않아도 다운로드할 수 있도록
+    Python 기본 제공 zipfile + OOXML 형식을 사용한다.
+    """
+    from zipfile import ZipFile, ZIP_DEFLATED
+    from xml.sax.saxutils import escape
+
+    xml_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+    # 엑셀 XML에서 허용되지 않는 제어문자를 제거한다.
+    def safe_xml(value):
+        text = str(value if value is not None else "")
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]", "", text)
+        return escape(text[:32767], {'"': '&quot;', "'": '&apos;'})
+
+    def column_name(i):
+        result = ""
+        while i:
+            i, mod = divmod(i - 1, 26)
+            result = chr(65 + mod) + result
+        return result
+
+    def cell_xml(row, col, value, style=0, numeric=False):
+        coordinate = f"{column_name(col)}{row}"
+        if value is None or value == "":
+            return f'<c r="{coordinate}" s="{style}"/>'
+        if numeric and isinstance(value, (int, float)) and not isinstance(value, bool):
+            return f'<c r="{coordinate}" s="{style}"><v>{value}</v></c>'
+        return (f'<c r="{coordinate}" s="{style}" t="inlineStr">'
+                f'<is><t xml:space="preserve">{safe_xml(value)}</t></is></c>')
+
+    headers = ["형태", "대분류", "상품명", "가격 원문", "인하 가격", "유통기한", "남은 일수"]
+    widths = [11, 12, 34, 44, 17, 14, 12]
+    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    def make_sheet(sheet_name, sheet_items):
+        rows = []
+        rows.append('<row r="1" ht="30" customHeight="1">' +
+                    cell_xml(1, 1, f"가격인하 취합 - {sheet_name}", 1) + '</row>')
+        info = (f"매장: {store_label} | 분류: {menu_label} | "
+                f"총 {len(sheet_items):,}건 | 생성: {generated}")
+        rows.append('<row r="2" ht="24" customHeight="1">' + cell_xml(2, 1, info, 2) + '</row>')
+        rows.append('<row r="3" ht="30" customHeight="1">' +
+                    ''.join(cell_xml(3, i, header, 3) for i, header in enumerate(headers, 1)) + '</row>')
+
+        for row_index, item in enumerate(sheet_items, start=4):
+            price_raw = clean_text(item.get("priceRaw", "")) or clean_text(item.get("priceDisplay", ""))
+            product = clean_text(item.get("product", ""))
+            values = [
+                clean_text(item.get("type", "")), clean_text(item.get("category", "")),
+                product, price_raw, "", clean_text(item.get("expiryDate", "")),
+                item.get("daysLeft", ""),
+            ]
+            estimated_lines = max(
+                1, len(product.splitlines()), len(price_raw.splitlines()),
+                len(product) // 24 + 1, len(price_raw) // 32 + 1,
+            )
+            height = max(28, min(90, 18 * estimated_lines))
+            cell_styles = [5, 5, 4, 4, 6, 7, 8]
+            cells = ''.join(
+                cell_xml(row_index, j, value, cell_styles[j-1], numeric=(j == 7))
+                for j, value in enumerate(values, start=1)
+            )
+            rows.append(f'<row r="{row_index}" ht="{height}" customHeight="1">{cells}</row>')
+
+        coldefs = ''.join(
+            f'<col min="{i}" max="{i}" width="{width}" customWidth="1"/>'
+            for i, width in enumerate(widths, 1)
+        )
+        last_row = max(3, len(sheet_items) + 3)
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<worksheet xmlns="{xml_ns}">'
+            '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+            '<sheetViews><sheetView workbookViewId="0" showGridLines="0">'
+            '<pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/>'
+            '</sheetView></sheetViews>'
+            '<sheetFormatPr defaultRowHeight="15"/>'
+            f'<cols>{coldefs}</cols>'
+            f'<sheetData>{"".join(rows)}</sheetData>'
+            '<mergeCells count="2"><mergeCell ref="A1:G1"/><mergeCell ref="A2:G2"/></mergeCells>'
+            f'<autoFilter ref="A3:G{last_row}"/>'
+            '<pageMargins left="0.25" right="0.25" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>'
+            '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>'
+            '</worksheet>'
+        )
+
+    styles_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="{xml_ns}">
+<fonts count="5">
+ <font><sz val="11"/><name val="Calibri"/></font>
+ <font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+ <font><sz val="11"/><color rgb="FF334155"/><name val="Calibri"/></font>
+ <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+ <font><sz val="11"/><color rgb="FFC65911"/><name val="Calibri"/></font>
+</fonts>
+<fills count="5">
+ <fill><patternFill patternType="none"/></fill>
+ <fill><patternFill patternType="gray125"/></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FF147D73"/><bgColor indexed="64"/></patternFill></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill>
+ <fill><patternFill patternType="solid"><fgColor rgb="FF111827"/><bgColor indexed="64"/></patternFill></fill>
+</fills>
+<borders count="2">
+ <border><left/><right/><top/><bottom/><diagonal/></border>
+ <border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right><top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border>
+</borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="9">
+ <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+ <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+ <xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
+ <xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+ <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+ <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>
+ <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>
+ <xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf>
+ <xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top"/></xf>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>"""
+
+    output = io.BytesIO()
+    with ZipFile(output, 'w', ZIP_DEFLATED, compresslevel=6) as archive:
+        archive.writestr('[Content_Types].xml', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>""")
+        archive.writestr('_rels/.rels', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""")
+        archive.writestr('xl/workbook.xml', f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="{xml_ns}" xmlns:r="{rel_ns}">
+<sheets><sheet name="기증" sheetId="1" r:id="rId1"/><sheet name="상생" sheetId="2" r:id="rId2"/></sheets>
+</workbook>""")
+        archive.writestr('xl/_rels/workbook.xml.rels', """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>""")
+        archive.writestr('xl/styles.xml', styles_xml)
+        for index, name in enumerate(('기증', '상생'), 1):
+            archive.writestr(f'xl/worksheets/sheet{index}.xml', make_sheet(name, grouped[name]))
+    output.seek(0)
+    return output
+
+
 @app.route("/download_excel")
 def download_excel():
-    """
-    현재 화면의 검색어·날짜·분류·선택 매장을 반영한 취합 리스트를 엑셀로 내려준다.
-    필터가 없으면 전체 가격리스트가 다운로드된다.
-    """
+    """화면 검색 조건을 반영한 가격인하 취합 엑셀(기증/상생 시트)을 다운로드한다."""
     try:
         if not Path(DATA_FILE).exists():
             sync_data()
 
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
             source = json.load(f)
 
-        items = source.get("items", [])
+        items = source.get('items', [])
         exceptions = load_exceptions()
+        search_mode = clean_text(request.args.get('mode', 'product'))
+        query = clean_text(request.args.get('q', ''))
+        date_start = clean_text(request.args.get('start', ''))
+        date_end = clean_text(request.args.get('end', ''))
+        menu = clean_text(request.args.get('menu', '전체상품'))
+        store_name = clean_text(request.args.get('store', ''))
 
-        search_mode = clean_text(request.args.get("mode", "product"))
-        query = clean_text(request.args.get("q", ""))
-        date_start = clean_text(request.args.get("start", ""))
-        date_end = clean_text(request.args.get("end", ""))
-        menu = clean_text(request.args.get("menu", "전체상품"))
-        store_name = clean_text(request.args.get("store", ""))
-
-        filtered = []
+        grouped = {'기증': [], '상생': []}
         tokens = [x for x in query.lower().split() if x]
-
         for original in items:
             item = apply_store_override_to_export(original, store_name, exceptions)
-
-            inbound = clean_text(item.get("inboundDate", ""))
+            inbound = clean_text(item.get('inboundDate', ''))
             if date_start and inbound < date_start:
                 continue
             if date_end and inbound > date_end:
                 continue
             if not export_menu_match(item, menu):
                 continue
-
             if query:
-                if search_mode == "box":
-                    if clean_text(item.get("boxNo", "")) != query:
+                if search_mode == 'box':
+                    if clean_text(item.get('boxNo', '')) != query:
                         continue
                 else:
-                    search_text = clean_text(item.get("search", "")).lower()
+                    search_text = clean_text(item.get('search', '')).lower()
                     if not all(token in search_text for token in tokens):
                         continue
 
-            filtered.append(item)
+            # 시트명은 원본 가격리스트의 형태 열로 결정한다.
+            item_type = clean_text(item.get('type', ''))
+            if '상생' in item_type:
+                grouped['상생'].append(item)
+            elif '기증' in item_type or '기부' in item_type:
+                grouped['기증'].append(item)
 
-        import xlsxwriter
-
-        output = io.BytesIO()
-        workbook = xlsxwriter.Workbook(output, {"in_memory": True})
-        title_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 16,
-            "font_color": "#FFFFFF",
-            "bg_color": "#147D73",
-            "align": "center",
-            "valign": "vcenter",
-        })
-        info_fmt = workbook.add_format({
-            "font_color": "#334155",
-            "bg_color": "#F1F5F9",
-            "align": "left",
-            "valign": "vcenter",
-        })
-        header_fmt = workbook.add_format({
-            "bold": True,
-            "font_color": "#FFFFFF",
-            "bg_color": "#111827",
-            "border": 1,
-            "align": "center",
-            "valign": "vcenter",
-            "text_wrap": True,
-        })
-        text_fmt = workbook.add_format({
-            "border": 1,
-            "valign": "top",
-            "text_wrap": True,
-        })
-        center_fmt = workbook.add_format({
-            "border": 1,
-            "align": "center",
-            "valign": "top",
-            "text_wrap": True,
-        })
-        discount_input_fmt = workbook.add_format({
-            "border": 1,
-            "align": "center",
-            "valign": "top",
-            "text_wrap": True,
-        })
-        expiry_fmt = workbook.add_format({
-            "border": 1,
-            "align": "center",
-            "valign": "top",
-            "bg_color": "#FFF2CC",
-            "font_color": "#C65911",
-            "num_format": "yyyy-mm-dd",
-        })
-        days_fmt = workbook.add_format({
-            "border": 1,
-            "align": "center",
-            "valign": "top",
-            "bg_color": "#FFF2CC",
-            "font_color": "#C65911",
-        })
-
-        headers = [
-            "형태",
-            "대분류",
-            "상품명",
-            "가격 원문",
-            "인하 가격",
-            "유통기한",
-            "남은 일수",
-        ]
-
-        # 형태를 기준으로 기존 취합 양식을 두 시트로 분리한다.
-        # 상품명이 아닌 원본 가격리스트의 '형태' 값을 사용한다.
-        grouped = {"기증": [], "상생": []}
-        for item in filtered:
-            item_type = clean_text(item.get("type", ""))
-            if "상생" in item_type:
-                grouped["상생"].append(item)
-            elif "기증" in item_type or "기부" in item_type:
-                grouped["기증"].append(item)
-
-        store_label = store_name or "전체"
-        menu_label = menu if menu and menu != "전체상품" else "전체"
-        widths = [11, 12, 34, 44, 17, 14, 12]
-
-        # 항상 두 시트를 생성한다. 한쪽 품목이 없어도 서식과 헤더는 유지.
-        for sheet_name in ("기증", "상생"):
-            sheet_items = grouped[sheet_name]
-            sheet = workbook.add_worksheet(sheet_name)
-            sheet.merge_range(
-                0, 0, 0, len(headers) - 1,
-                f"가격인하 취합 - {sheet_name}",
-                title_fmt
-            )
-            info_text = (
-                f"매장: {store_label} | "
-                f"분류: {menu_label} | "
-                f"총 {len(sheet_items):,}건 | "
-                f"생성: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            )
-            sheet.merge_range(
-                1, 0, 1, len(headers) - 1,
-                info_text,
-                info_fmt
-            )
-
-            for col, header in enumerate(headers):
-                sheet.write(2, col, header, header_fmt)
-
-            for row_idx, item in enumerate(sheet_items, start=3):
-                price_raw = clean_text(item.get("priceRaw", ""))
-                if not price_raw:
-                    price_raw = clean_text(item.get("priceDisplay", ""))
-
-                values = [
-                    clean_text(item.get("type", "")),
-                    clean_text(item.get("category", "")),
-                    clean_text(item.get("product", "")),
-                    price_raw,
-                    "",  # 인하 가격은 매장에서 직접 입력
-                    clean_text(item.get("expiryDate", "")),
-                    item.get("daysLeft", ""),
-                ]
-
-                sheet.write(row_idx, 0, values[0], center_fmt)
-                sheet.write(row_idx, 1, values[1], center_fmt)
-                sheet.write(row_idx, 2, values[2], text_fmt)
-                sheet.write(row_idx, 3, values[3], text_fmt)
-                sheet.write_blank(row_idx, 4, None, discount_input_fmt)
-                sheet.write(row_idx, 5, values[5], expiry_fmt)
-                sheet.write(row_idx, 6, values[6], days_fmt)
-
-                # 복합 가격·긴 상품명이 잘리지 않도록 기존 행 높이 설정 유지
-                line_count = max(
-                    1,
-                    len(str(values[2]).splitlines()),
-                    len(str(values[3]).splitlines()),
-                )
-                estimated_lines = max(
-                    line_count,
-                    (len(str(values[2])) // 24) + 1,
-                    (len(str(values[3])) // 32) + 1,
-                )
-                sheet.set_row(row_idx, max(28, min(90, 18 * estimated_lines)))
-
-            for idx, width in enumerate(widths):
-                sheet.set_column(idx, idx, width)
-
-            sheet.set_row(0, 30)
-            sheet.set_row(1, 24)
-            sheet.set_row(2, 30)
-            sheet.freeze_panes(3, 0)
-            sheet.autofilter(2, 0, max(2, len(sheet_items) + 2), len(headers) - 1)
-
-            # 인쇄 설정: A4 가로, 한 페이지 너비
-            sheet.set_landscape()
-            sheet.set_paper(9)
-            sheet.fit_to_pages(1, 0)
-            sheet.set_margins(left=0.25, right=0.25, top=0.4, bottom=0.4)
-            sheet.repeat_rows(0, 2)
-            sheet.hide_gridlines(2)
-
-        workbook.close()
-        output.seek(0)
+        store_label = store_name or '전체'
+        menu_label = menu if menu and menu != '전체상품' else '전체'
+        output = build_discount_workbook(grouped, store_label, menu_label)
 
         filename = f"가격인하_취합_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-        return send_file(
+        response = send_file(
             output,
             as_attachment=True,
             download_name=filename,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+        response.headers['Cache-Control'] = 'no-store'
+        return response
     except Exception as e:
-        return jsonify({"ok": False, "message": str(e)}), 500
-
+        app.logger.exception('가격인하 엑셀 다운로드 실패')
+        return jsonify({'ok': False, 'message': f'엑셀 다운로드 처리 오류: {e}'}), 500
 
 
 # 월별 유통기한 조회는 기존 가격검색·가격인하 다운로드와 독립적으로 작동한다.
