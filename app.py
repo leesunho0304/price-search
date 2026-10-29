@@ -1114,7 +1114,7 @@ def build_discount_workbook(grouped, store_label, menu_label):
                                   highlight_days_col=6, blank_col=4)
 
 
-@app.route("/download_excel")
+@app.route("/download_excel", methods=["GET", "POST"])
 def download_excel():
     """화면 검색 조건을 반영한 가격인하 취합 엑셀(기증/상생 시트)을 다운로드한다."""
     try:
@@ -1126,12 +1126,36 @@ def download_excel():
 
         items = source.get('items', [])
         exceptions = load_exceptions()
-        search_mode = clean_text(request.args.get('mode', 'product'))
-        query = clean_text(request.args.get('q', ''))
-        date_start = clean_text(request.args.get('start', ''))
-        date_end = clean_text(request.args.get('end', ''))
-        menu = clean_text(request.args.get('menu', '전체상품'))
-        store_name = clean_text(request.args.get('store', ''))
+        # 검색 화면(index.html)은 JSON을 POST로 전송하고,
+        # 주소 직접 입력/기존 링크는 GET 쿼리 파라미터를 사용한다.
+        # 두 방식을 모두 지원하여 다운로드 버튼과 직접 링크가 똑같이 동작하도록 한다.
+        if request.method == "POST":
+            params = request.get_json(silent=True) or {}
+            if not isinstance(params, dict):
+                return jsonify({"ok": False, "message": "다운로드 요청 형식이 올바르지 않습니다."}), 400
+        else:
+            params = request.args
+
+        search_mode = clean_text(params.get('mode', 'product'))
+        query = clean_text(params.get('q', ''))
+        date_start = clean_text(params.get('start', ''))
+        date_end = clean_text(params.get('end', ''))
+        menu = clean_text(params.get('menu', '전체상품'))
+        store_name = clean_text(params.get('store', ''))
+
+        # 사용자가 화면에서 '가격인하 완료'로 표시한 상품은
+        # 상품명+유통기한 조합을 기준으로 요청서에서 제외한다.
+        # 기존 브라우저 로컬 저장 키 형식과 동일한 정규화를 사용한다.
+        raw_exclude_keys = params.get('excludeKeys', [])
+        exclude_keys = set(
+            str(key) for key in raw_exclude_keys if isinstance(key, str)
+        ) if isinstance(raw_exclude_keys, list) else set()
+
+        def discount_done_key(item):
+            name = clean_text(item.get('product', '')).lower().strip()
+            name = re.sub(r'[\s\-_.\/·ㆍ()\[\]{}]+', '', name)
+            expiry = clean_text(item.get('expiryDate', '')) or '__NO_EXPIRY__'
+            return f'{name}|||{expiry}'
 
         selected = []
         tokens = [x for x in query.lower().split() if x]
@@ -1153,6 +1177,9 @@ def download_excel():
                     if not all(token in search_text for token in tokens):
                         continue
 
+            if exclude_keys and discount_done_key(item) in exclude_keys:
+                continue
+
             selected.append(item)
 
         grouped = split_export_items(selected)
@@ -1168,6 +1195,8 @@ def download_excel():
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
         response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Price-Export-Fix'] = 'post-enabled-v7'
+        response.headers['X-Price-Export-Sheets'] = '|'.join(grouped.keys())
         return response
     except Exception as e:
         app.logger.exception('가격인하 엑셀 다운로드 실패')

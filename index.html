@@ -828,7 +828,7 @@ function renderSearch(rows){
         <span class="badge">${esc(i.inboundDate||"-")}</span>
         <span class="badge">박스 ${esc(i.boxNo||"-")}</span>
         ${i.expiryDate?`<span class="badge warn">${esc(i.expiryDate)}</span>`:""}
-        ${sangseng?'<span class="badge red">상생 · 인하요청 제외</span>':""}
+        ${sangseng?'<span class="badge red">상생 · 별도 시트로 다운로드</span>':""}
         ${discountDone?'<span class="badge">가격인하 완료</span>':""}
       </div>
       ${i.showPriceDetail&&i.priceRaw?`<div class="priceRaw">${esc(i.priceRaw)}</div>`:""}
