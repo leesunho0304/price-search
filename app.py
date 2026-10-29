@@ -1159,7 +1159,7 @@ def download_excel():
 
 
 # 월별 유통기한 조회는 기존 가격검색·가격인하 다운로드와 독립적으로 작동한다.
-EXPIRY_CALENDAR_HTML = '<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>\n<title>월별 유통기한 조회 - 기빙플러스</title>\n<style>\n:root{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#1e293b;background:#f8fafc}\n*{box-sizing:border-box}body{margin:0}main{max-width:1180px;margin:0 auto;padding:30px 18px 64px}\na{color:#147d73;text-decoration:none}a:hover{text-decoration:underline}h1{margin:10px 0;font-size:27px}\n.sub{color:#64748b;margin:6px 0 24px}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.03)}\n.controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.control{display:flex;flex-direction:column;gap:6px}\nlabel{font-size:13px;font-weight:700}input,select,button{font:inherit;min-height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;background:white}\nbutton{background:#147d73;color:white;font-weight:700;border-color:#147d73;cursor:pointer}button:disabled{opacity:.55;cursor:default}\n.help{color:#64748b;font-size:13px;margin:14px 0 0}.summary{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.stat{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:15px 20px;min-width:160px}\n.stat strong{display:block;font-size:25px;margin-top:4px}.stat small{color:#64748b}\n.table-wrap{overflow:auto;background:white;border:1px solid #e2e8f0;border-radius:14px}table{width:100%;border-collapse:collapse;min-width:900px;font-size:14px}\nth{text-align:left;background:#f1f5f9;white-space:nowrap;position:sticky;top:0}th,td{padding:12px 13px;border-bottom:1px solid #e2e8f0;vertical-align:top}td.product{min-width:210px;max-width:360px;white-space:pre-wrap}\n.empty{padding:48px 20px;text-align:center;color:#64748b}#status{margin:15px 0;color:#475569} .tag{display:inline-block;border-radius:20px;padding:3px 9px;background:#eef2f6;font-size:12px}\n@media(max-width:650px){h1{font-size:23px}main{padding:18px 12px}.panel{padding:15px}}\n</style></head>\n<body><main>\n<a href="/">← 가격검색으로 돌아가기</a>\n<h1>📅 월별 유통기한 조회</h1>\n<p class="sub">가격리스트에 유통기한이 등록된 상품을 원하는 날짜 기준으로 모아 볼 수 있습니다.</p>\n<div class="panel">\n<form id="form" class="controls">\n <div class="control"><label for="target">기준 날짜</label><input id="target" type="date" required value="__DEFAULT_DATE__"/></div>\n <div class="control"><label for="mode">조회 범위</label><select id="mode">\n  <option value="month">선택한 달 전체 (1일~말일)</option>\n  <option value="until">오늘부터 선택 날짜까지</option>\n  <option value="day">선택 날짜 당일만</option>\n </select></div>\n <button type="submit" id="searchBtn">상품 조회</button>\n <button type="button" id="exportBtn" disabled>조회 결과 엑셀 다운로드</button>\n</form>\n<p class="help" id="modeHelp">예: 12월 31일을 선택하면 12월 1~31일에 유통기한이 도래하는 상품을 표시합니다.</p>\n</div>\n<div id="status" role="status">상품을 조회하는 중입니다.</div>\n<div class="summary"><div class="stat"><small>조회된 상품 행</small><strong id="total">-</strong></div>\n<div class="stat"><small>기증</small><strong id="donated">-</strong></div>\n<div class="stat"><small>상생</small><strong id="partner">-</strong></div></div>\n<div class="table-wrap"><table><thead><tr><th>유통기한</th><th>형태</th><th>대분류</th><th>상품명</th><th>가격</th><th>남은 일수</th><th>입고일</th><th>매장</th><th>박스번호</th></tr></thead><tbody id="results"><tr><td colspan="9" class="empty">조회 중...</td></tr></tbody></table></div>\n<p class="help">가격리스트에 기한이 기록된 상품 기준입니다. 실제 매장 재고·판매 여부는 별도 확인이 필요하며, 같은 상품이 여러 차례 등록된 경우 여러 행으로 표시될 수 있습니다.</p>\n</main>\n<script>\nconst form=document.getElementById(\'form\'), target=document.getElementById(\'target\'), mode=document.getElementById(\'mode\');\nconst help=document.getElementById(\'modeHelp\'), results=document.getElementById(\'results\'), status=document.getElementById(\'status\');\nconst exportBtn=document.getElementById(\'exportBtn\');\nlet lastSearchParams=null,lastSearchItems=null,lastSearchMetadata=null;\nconst HELP={month:\'예: 12월 31일 선택 → 12월 1~31일 만료 상품 전체\',until:\'예: 12월 31일 선택 → 오늘부터 12월 31일까지 만료 예정 상품\',day:\'예: 12월 31일 선택 → 12월 31일 당일 만료 상품만\'};\nfunction markResultsStale(){lastSearchParams=null;lastSearchItems=null;lastSearchMetadata=null;exportBtn.disabled=true;}\nmode.addEventListener(\'change\',()=>{help.textContent=HELP[mode.value];markResultsStale();});\ntarget.addEventListener(\'change\',markResultsStale);\nfunction td(value,klass){const cell=document.createElement(\'td\');cell.textContent=value===null||value===undefined?\'\':String(value);if(klass)cell.className=klass;return cell;}\nfunction none(message){results.replaceChildren();const tr=document.createElement(\'tr\');const cell=td(message,\'empty\');cell.colSpan=9;tr.append(cell);results.append(tr);}\nasync function search(){\n const btn=document.getElementById(\'searchBtn\');btn.disabled=true;markResultsStale();status.textContent=\'조회 중입니다...\';none(\'상품을 불러오는 중입니다.\');\n try{\n  const params=new URLSearchParams({date:target.value,mode:mode.value});\n  const response=await fetch(\'/api/expiry_calendar?\'+params.toString(),{cache:\'no-store\'});\n  const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.message||\'조회에 실패했습니다.\');\n  const items=data.items||[];results.replaceChildren();\n  for(const item of items){\n   const tr=document.createElement(\'tr\');\n   const remaining=item.daysLeft;\n   const days=typeof remaining===\'number\'?(remaining<0?Math.abs(remaining)+\'일 지남\':remaining+\'일\'):\'-\';\n   const fields=[item.expiryDate,item.type,item.category,item.product,item.priceDisplay||item.priceRaw,days,item.inboundDate,item.store,item.boxNo];\n   fields.forEach((v,i)=>tr.append(td(v,i===3?\'product\':\'\')));results.append(tr);\n  }\n  if(!items.length)none(\'선택한 기간에 해당하는 유통기한 상품이 없습니다.\');\n  document.getElementById(\'total\').textContent=items.length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'donated\').textContent=items.filter(i=>(i.type||\'\').includes(\'기증\')||(i.type||\'\').includes(\'기부\')).length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'partner\').textContent=items.filter(i=>(i.type||\'\').includes(\'상생\')).length.toLocaleString(\'ko-KR\');\n  status.textContent=data.periodLabel+\' · \'+items.length.toLocaleString(\'ko-KR\')+\'행 · 가격리스트 동기화 \'+(data.updatedAt||\'확인 불가\');\n  lastSearchParams=params.toString();lastSearchItems=items;lastSearchMetadata={periodLabel:data.periodLabel,updatedAt:data.updatedAt};exportBtn.disabled=items.length===0;\n }catch(e){none(\'조회하지 못했습니다.\');status.textContent=\'오류: \'+e.message;}\n finally{btn.disabled=false;}\n}\nasync function downloadResults(){\n if(!lastSearchParams||!lastSearchItems||lastSearchItems.length===0){\n  status.textContent=\'조회된 상품이 없습니다. 날짜를 다시 선택해 주세요.\';return;\n }\n exportBtn.disabled=true;\n const previousStatus=status.textContent;\n status.textContent=\'조회한 \'+lastSearchItems.length.toLocaleString(\'ko-KR\')+\'건을 엑셀로 만드는 중입니다...\';\n try{\n  const response=await fetch(\'/download_expiry_excel?\'+lastSearchParams,{\n    method:\'POST\',cache:\'no-store\',headers:{\'Content-Type\':\'application/json\'},\n    body:JSON.stringify({items:lastSearchItems,periodLabel:lastSearchMetadata.periodLabel,updatedAt:lastSearchMetadata.updatedAt})\n  });\n  if(!response.ok){let message=\'엑셀 다운로드에 실패했습니다.\';try{const error=await response.json();message=error.message||message;}catch(_e){}throw new Error(message);}\n  const reportedCount=Number(response.headers.get(\'X-Export-Row-Count\'));\n  if(!Number.isFinite(reportedCount)||reportedCount!==lastSearchItems.length){\n   throw new Error(\'조회 결과 수와 엑셀 생성 수가 다릅니다. 화면 새로고침 후 다시 시도해 주세요.\');\n  }\n  const blob=await response.blob();\n  if(blob.size<1000)throw new Error(\'다운로드된 엑셀 파일이 비정상적으로 작습니다.\');\n  const url=URL.createObjectURL(blob);\n  const link=document.createElement(\'a\');link.href=url;\n  link.download=\'유통기한_조회_\'+target.value+\'_\'+mode.value+\'_\'+reportedCount+\'건.xlsx\';\n  document.body.appendChild(link);link.click();link.remove();\n  setTimeout(()=>URL.revokeObjectURL(url),60000);\n  status.textContent=previousStatus+\' · \'+reportedCount.toLocaleString(\'ko-KR\')+\'건 엑셀 다운로드 완료\';\n }catch(e){status.textContent=\'엑셀 다운로드 오류: \'+e.message;}\n finally{exportBtn.disabled=!lastSearchItems||lastSearchItems.length===0;}\n}\nexportBtn.addEventListener(\'click\',downloadResults);\nform.addEventListener(\'submit\',event=>{event.preventDefault();search();});\nsearch();\n</script></body></html>'
+EXPIRY_CALENDAR_HTML = '<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>\n<title>월별 유통기한 조회 - 기빙플러스</title>\n<style>\n:root{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#1e293b;background:#f8fafc}\n*{box-sizing:border-box}body{margin:0}main{max-width:1180px;margin:0 auto;padding:30px 18px 64px}\na{color:#147d73;text-decoration:none}a:hover{text-decoration:underline}h1{margin:10px 0;font-size:27px}\n.sub{color:#64748b;margin:6px 0 24px}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.03)}\n.controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.control{display:flex;flex-direction:column;gap:6px}\nlabel{font-size:13px;font-weight:700}input,select,button{font:inherit;min-height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;background:white}\nbutton{background:#147d73;color:white;font-weight:700;border-color:#147d73;cursor:pointer}button:disabled{opacity:.55;cursor:default}\n.help{color:#64748b;font-size:13px;margin:14px 0 0}.summary{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.stat{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:15px 20px;min-width:160px}\n.stat strong{display:block;font-size:25px;margin-top:4px}.stat small{color:#64748b}\n.table-wrap{overflow:auto;background:white;border:1px solid #e2e8f0;border-radius:14px}table{width:100%;border-collapse:collapse;min-width:900px;font-size:14px}\nth{text-align:left;background:#f1f5f9;white-space:nowrap;position:sticky;top:0}th,td{padding:12px 13px;border-bottom:1px solid #e2e8f0;vertical-align:top}td.product{min-width:210px;max-width:360px;white-space:pre-wrap}\n.empty{padding:48px 20px;text-align:center;color:#64748b}#status{margin:15px 0;color:#475569} .tag{display:inline-block;border-radius:20px;padding:3px 9px;background:#eef2f6;font-size:12px}\n@media(max-width:650px){h1{font-size:23px}main{padding:18px 12px}.panel{padding:15px}}\n</style></head>\n<body><main>\n<a href="/">← 가격검색으로 돌아가기</a>\n<h1>📅 월별 유통기한 조회</h1>\n<p class="sub">가격리스트에 유통기한이 등록된 상품을 원하는 날짜 기준으로 모아 볼 수 있습니다.</p>\n<div class="panel">\n<form id="form" class="controls">\n <div class="control"><label for="target">기준 날짜</label><input id="target" type="date" required value="__DEFAULT_DATE__"/></div>\n <div class="control"><label for="mode">조회 범위</label><select id="mode">\n  <option value="month">선택한 달 전체 (1일~말일)</option>\n  <option value="until">오늘부터 선택 날짜까지</option>\n  <option value="day">선택 날짜 당일만</option>\n </select></div>\n <button type="submit" id="searchBtn">상품 조회</button>\n <button type="button" id="exportBtn" disabled>조회 결과 엑셀 다운로드 (.xlsx)</button>\n <button type="button" id="csvBtn" disabled>엑셀 호환 CSV 다운로드</button>\n</form>\n<p class="help" id="modeHelp">예: 12월 31일을 선택하면 12월 1~31일에 유통기한이 도래하는 상품을 표시합니다.</p>\n</div>\n<div id="status" role="status">상품을 조회하는 중입니다.</div>\n<div class="summary"><div class="stat"><small>조회된 상품 행</small><strong id="total">-</strong></div>\n<div class="stat"><small>기증</small><strong id="donated">-</strong></div>\n<div class="stat"><small>상생</small><strong id="partner">-</strong></div></div>\n<div class="table-wrap"><table><thead><tr><th>유통기한</th><th>형태</th><th>대분류</th><th>상품명</th><th>가격</th><th>남은 일수</th><th>입고일</th><th>매장</th><th>박스번호</th></tr></thead><tbody id="results"><tr><td colspan="9" class="empty">조회 중...</td></tr></tbody></table></div>\n<p class="help">가격리스트에 기한이 기록된 상품 기준입니다. 실제 매장 재고·판매 여부는 별도 확인이 필요하며, 같은 상품이 여러 차례 등록된 경우 여러 행으로 표시될 수 있습니다. · 다운로드 개선 버전 v3</p>\n</main>\n<script>\nconst form=document.getElementById(\'form\'), target=document.getElementById(\'target\'), mode=document.getElementById(\'mode\');\nconst help=document.getElementById(\'modeHelp\'), results=document.getElementById(\'results\'), status=document.getElementById(\'status\');\nconst exportBtn=document.getElementById(\'exportBtn\'),csvBtn=document.getElementById(\'csvBtn\');\nlet lastSearchParams=null,lastSearchItems=null,lastSearchMetadata=null;\nconst HELP={month:\'예: 12월 31일 선택 → 12월 1~31일 만료 상품 전체\',until:\'예: 12월 31일 선택 → 오늘부터 12월 31일까지 만료 예정 상품\',day:\'예: 12월 31일 선택 → 12월 31일 당일 만료 상품만\'};\nfunction markResultsStale(){lastSearchParams=null;lastSearchItems=null;lastSearchMetadata=null;exportBtn.disabled=true;csvBtn.disabled=true;}\nmode.addEventListener(\'change\',()=>{help.textContent=HELP[mode.value];markResultsStale();});\ntarget.addEventListener(\'change\',markResultsStale);\nfunction td(value,klass){const cell=document.createElement(\'td\');cell.textContent=value===null||value===undefined?\'\':String(value);if(klass)cell.className=klass;return cell;}\nfunction none(message){results.replaceChildren();const tr=document.createElement(\'tr\');const cell=td(message,\'empty\');cell.colSpan=9;tr.append(cell);results.append(tr);}\nasync function search(){\n const btn=document.getElementById(\'searchBtn\');btn.disabled=true;markResultsStale();status.textContent=\'조회 중입니다...\';none(\'상품을 불러오는 중입니다.\');\n try{\n  const params=new URLSearchParams({date:target.value,mode:mode.value});\n  const response=await fetch(\'/api/expiry_calendar?\'+params.toString(),{cache:\'no-store\'});\n  const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.message||\'조회에 실패했습니다.\');\n  const items=data.items||[];results.replaceChildren();\n  for(const item of items){\n   const tr=document.createElement(\'tr\');\n   const remaining=item.daysLeft;\n   const days=typeof remaining===\'number\'?(remaining<0?Math.abs(remaining)+\'일 지남\':remaining+\'일\'):\'-\';\n   const fields=[item.expiryDate,item.type,item.category,item.product,item.priceDisplay||item.priceRaw,days,item.inboundDate,item.store,item.boxNo];\n   fields.forEach((v,i)=>tr.append(td(v,i===3?\'product\':\'\')));results.append(tr);\n  }\n  if(!items.length)none(\'선택한 기간에 해당하는 유통기한 상품이 없습니다.\');\n  document.getElementById(\'total\').textContent=items.length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'donated\').textContent=items.filter(i=>(i.type||\'\').includes(\'기증\')||(i.type||\'\').includes(\'기부\')).length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'partner\').textContent=items.filter(i=>(i.type||\'\').includes(\'상생\')).length.toLocaleString(\'ko-KR\');\n  status.textContent=data.periodLabel+\' · \'+items.length.toLocaleString(\'ko-KR\')+\'행 · 가격리스트 동기화 \'+(data.updatedAt||\'확인 불가\');\n  lastSearchParams=params.toString();lastSearchItems=items;lastSearchMetadata={periodLabel:data.periodLabel,updatedAt:data.updatedAt};exportBtn.disabled=items.length===0;csvBtn.disabled=items.length===0;\n }catch(e){none(\'조회하지 못했습니다.\');status.textContent=\'오류: \'+e.message;}\n finally{btn.disabled=false;}\n}\nasync function downloadResults(){\n if(!lastSearchParams||!lastSearchItems||lastSearchItems.length===0){\n  status.textContent=\'조회된 상품이 없습니다. 날짜를 다시 선택해 주세요.\';return;\n }\n exportBtn.disabled=true;\n const previousStatus=status.textContent;\n status.textContent=\'조회한 \'+lastSearchItems.length.toLocaleString(\'ko-KR\')+\'건을 엑셀로 만드는 중입니다...\';\n try{\n  const response=await fetch(\'/download_expiry_excel?\'+lastSearchParams,{\n    method:\'POST\',cache:\'no-store\',headers:{\'Content-Type\':\'application/json\'},\n    body:JSON.stringify({items:lastSearchItems,periodLabel:lastSearchMetadata.periodLabel,updatedAt:lastSearchMetadata.updatedAt})\n  });\n  if(!response.ok){let message=\'엑셀 다운로드에 실패했습니다.\';try{const error=await response.json();message=error.message||message;}catch(_e){}throw new Error(message);}\n  const reportedCount=Number(response.headers.get(\'X-Export-Row-Count\'));\n  if(!Number.isFinite(reportedCount)||reportedCount!==lastSearchItems.length){\n   throw new Error(\'조회 결과 수와 엑셀 생성 수가 다릅니다. 화면 새로고침 후 다시 시도해 주세요.\');\n  }\n  const blob=await response.blob();\n  if(blob.size<1000)throw new Error(\'다운로드된 엑셀 파일이 비정상적으로 작습니다.\');\n  const url=URL.createObjectURL(blob);\n  const link=document.createElement(\'a\');link.href=url;\n  link.download=\'유통기한_조회_\'+target.value+\'_\'+mode.value+\'_\'+reportedCount+\'건.xlsx\';\n  document.body.appendChild(link);link.click();link.remove();\n  setTimeout(()=>URL.revokeObjectURL(url),60000);\n  status.textContent=previousStatus+\' · \'+reportedCount.toLocaleString(\'ko-KR\')+\'건 엑셀 다운로드 완료\';\n }catch(e){status.textContent=\'엑셀 다운로드 오류: \'+e.message;}\n finally{exportBtn.disabled=!lastSearchItems||lastSearchItems.length===0;}\n}\nfunction downloadCsvResults(){\n if(!lastSearchItems||lastSearchItems.length===0){status.textContent=\'조회된 상품이 없습니다.\';return;}\n const headings=[\'유통기한\',\'형태\',\'대분류\',\'상품명\',\'가격\',\'남은 일수\',\'입고일\',\'매장\',\'박스번호\'];\n const fields=[\'expiryDate\',\'type\',\'category\',\'product\',\'priceDisplay\',\'daysLeft\',\'inboundDate\',\'store\',\'boxNo\'];\n function csvCell(value){\n  let v=String(value===undefined||value===null?\'\':value);\n  if(/^[\\s]*[=+@]/.test(v)||(/^[\\s]*-/.test(v) && !/^\\s*-\\d+(?:\\.\\d+)?\\s*$/.test(v)))v=String.fromCharCode(39)+v;\n  return String.fromCharCode(34)+v.replace(/"/g,\'""\')+String.fromCharCode(34);\n }\n const lines=[headings.map(csvCell).join(\',\')];\n for(const item of lastSearchItems){\n  const record=fields.map(f=>f===\'priceDisplay\'?(item.priceDisplay||item.priceRaw||\'\'):item[f]);\n  lines.push(record.map(csvCell).join(\',\'));\n }\n const blob=new Blob([String.fromCharCode(0xFEFF)+lines.join(\'\\r\\n\')],{type:\'text/csv;charset=utf-8;\'});\n const url=URL.createObjectURL(blob),link=document.createElement(\'a\');\n link.href=url;link.download=\'유통기한조회_\'+target.value+\'_\'+mode.value+\'_\'+lastSearchItems.length+\'건.csv\';\n document.body.appendChild(link);link.click();link.remove();\n setTimeout(()=>URL.revokeObjectURL(url),60000);\n status.textContent=\'조회된 \'+lastSearchItems.length.toLocaleString(\'ko-KR\')+\'건을 CSV로 저장했습니다. Excel에서 열 수 있습니다.\';\n}\ncsvBtn.addEventListener(\'click\',downloadCsvResults);\nexportBtn.addEventListener(\'click\',downloadResults);\nform.addEventListener(\'submit\',event=>{event.preventDefault();search();});\nsearch();\n</script></body></html>'
 
 
 def get_expiry_calendar_rows(target_date, mode):
@@ -1236,136 +1236,132 @@ def api_expiry_calendar():
 
 
 def build_expiry_calendar_workbook(items, period_label, updated_at):
-    """조회 화면과 같은 목록을 엑셀 한 시트로 만든다. 추가 패키지 불필요."""
-    from zipfile import ZipFile, ZIP_DEFLATED
-    from xml.sax.saxutils import escape
+    """Create a conventional XLSX using an established spreadsheet library.
 
-    xml_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-    rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-
-    def safe_xml(value):
-        value = str(value if value is not None else "")
-        value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]", "", value)
-        return escape(value[:32767], {'"': '&quot;', "'": '&apos;'})
-
-    def cell_xml(row, col, value, style=0, numeric=False):
-        column = chr(64 + col)  # A~I: 이 보고서는 9개 열을 사용
-        coordinate = f"{column}{row}"
-        if value is None or value == "":
-            return f'<c r="{coordinate}" s="{style}"/>'
-        if numeric and isinstance(value, (int, float)) and not isinstance(value, bool):
-            return f'<c r="{coordinate}" s="{style}"><v>{value}</v></c>'
-        return (f'<c r="{coordinate}" s="{style}" t="inlineStr">'
-                f'<is><t xml:space="preserve">{safe_xml(value)}</t></is></c>')
-
+    The earlier hand-built Office XML was readable by some tools but could show
+    as a blank sheet in desktop Excel. XlsxWriter is preferred; openpyxl works
+    as a fallback. When neither is installed the API returns an actionable
+    error, and the browser-side CSV export remains available.
+    """
     headers = ["유통기한", "형태", "대분류", "상품명", "가격", "남은 일수", "입고일", "매장", "박스번호"]
-    widths = [16, 12, 15, 43, 38, 15, 16, 21, 14]
-    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
-    donated = sum(1 for row in items if "기증" in clean_text(row.get("type", "")) or "기부" in clean_text(row.get("type", "")))
-    partner = sum(1 for row in items if "상생" in clean_text(row.get("type", "")))
-
-    rows = [
-        '<row r="1" ht="33" customHeight="1">' + cell_xml(1, 1, "유통기한 조회 결과", 1) + '</row>',
-        '<row r="2" ht="27" customHeight="1">' +
-        cell_xml(2, 1, f"기간: {period_label} | 전체 {len(items):,}건 | 기증 {donated:,}건 | 상생 {partner:,}건 | 생성: {generated} | 원본 동기화: {updated_at or '확인 불가'}", 2) + '</row>',
-        '<row r="3" ht="30" customHeight="1">' +
-        ''.join(cell_xml(3, col, header, 3) for col, header in enumerate(headers, start=1)) + '</row>',
-    ]
-    for row_idx, item in enumerate(items, start=4):
-        product = clean_text(item.get("product", ""))
-        price = clean_text(item.get("priceDisplay", "")) or clean_text(item.get("priceRaw", ""))
-        days = item.get("daysLeft", "")
-        values = [
-            clean_text(item.get("expiryDate", "")),
-            clean_text(item.get("type", "")),
-            clean_text(item.get("category", "")),
-            product, price, days,
-            clean_text(item.get("inboundDate", "")),
-            clean_text(item.get("store", "")),
-            clean_text(item.get("boxNo", "")),
-        ]
-        height = max(28, min(100, 18 * max(1, len(product.splitlines()), len(price.splitlines()),
-                                          len(product) // 30 + 1, len(price) // 32 + 1)))
-        cells = ''.join(cell_xml(row_idx, col, value,
-                                 6 if col == 6 and isinstance(days, (int, float)) and days < 0 else
-                                 (5 if col in (1, 2, 3, 6, 7, 8, 9) else 4),
-                                 numeric=(col == 6))
-                        for col, value in enumerate(values, start=1))
-        rows.append(f'<row r="{row_idx}" ht="{height}" customHeight="1">{cells}</row>')
-
-    coldefs = ''.join(f'<col min="{i}" max="{i}" width="{w}" customWidth="1"/>'
-                      for i, w in enumerate(widths, start=1))
-    last_row = max(3, len(items) + 3)
-    sheet_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        f'<worksheet xmlns="{xml_ns}">'
-        f'<dimension ref="A1:I{last_row}"/>'
-        '<sheetViews><sheetView workbookViewId="0" showGridLines="0">'
-        '<pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/>'
-        '</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>'
-        f'<cols>{coldefs}</cols><sheetData>{"".join(rows)}</sheetData>'
-        '<mergeCells count="2"><mergeCell ref="A1:I1"/><mergeCell ref="A2:I2"/></mergeCells>'
-        f'<autoFilter ref="A3:I{last_row}"/>'
-        '<pageMargins left="0.25" right="0.25" top="0.4" bottom="0.4" header="0.2" footer="0.2"/>'
-        '<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>'
-        '</worksheet>'
+    donated = sum("기증" in clean_text(i.get("type")) or "기부" in clean_text(i.get("type")) for i in items)
+    partner = sum("상생" in clean_text(i.get("type")) for i in items)
+    summary = (
+        f"기간: {period_label} | 전체 {len(items):,}건 | 기증 {donated:,}건 | "
+        f"상생 {partner:,}건 | 원본 동기화: {updated_at or '확인 불가'}"
     )
-    styles_xml = f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<styleSheet xmlns="{xml_ns}">
-<fonts count="5">
-<font><sz val="11"/><name val="Calibri"/></font>
-<font><b/><sz val="16"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
-<font><sz val="11"/><color rgb="FF334155"/><name val="Calibri"/></font>
-<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
-<font><b/><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font>
-</fonts>
-<fills count="5">
-<fill><patternFill patternType="none"/></fill>
-<fill><patternFill patternType="gray125"/></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF147D73"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/></patternFill></fill>
-<fill><patternFill patternType="solid"><fgColor rgb="FF111827"/></patternFill></fill>
-</fills>
-<borders count="2">
-<border><left/><right/><top/><bottom/><diagonal/></border>
-<border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right><top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border>
-</borders>
-<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7">
-<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
-<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
-<xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="left" vertical="center"/></xf>
-<xf numFmtId="0" fontId="3" fillId="4" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>
-<xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyAlignment="1"><alignment horizontal="center" vertical="top" wrapText="1"/></xf>
-</cellXfs>
-<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-</styleSheet>'''
+    widths = [16, 12, 15, 43, 38, 15, 16, 21, 14]
+
+    def data_row(item):
+        price = clean_text(item.get("priceDisplay")) or clean_text(item.get("priceRaw"))
+        return [
+            clean_text(item.get("expiryDate")),
+            clean_text(item.get("type")),
+            clean_text(item.get("category")),
+            clean_text(item.get("product")),
+            price,
+            item.get("daysLeft", ""),
+            clean_text(item.get("inboundDate")),
+            clean_text(item.get("store")),
+            clean_text(item.get("boxNo")),
+        ]
 
     output = io.BytesIO()
-    with ZipFile(output, 'w', ZIP_DEFLATED, compresslevel=6) as archive:
-        archive.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
-<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-</Types>''')
-        archive.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>''')
-        archive.writestr('xl/workbook.xml', f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="{xml_ns}" xmlns:r="{rel_ns}">
-<sheets><sheet name="유통기한조회" sheetId="1" r:id="rId1"/></sheets>
-</workbook>''')
-        archive.writestr('xl/_rels/workbook.xml.rels', '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
-</Relationships>''')
-        archive.writestr('xl/styles.xml', styles_xml)
-        archive.writestr('xl/worksheets/sheet1.xml', sheet_xml)
+    try:
+        import xlsxwriter
+    except ImportError:
+        xlsxwriter = None
+
+    if xlsxwriter is not None:
+        workbook = xlsxwriter.Workbook(output, {
+            "in_memory": True, "strings_to_formulas": False,
+            "strings_to_urls": False,
+        })
+        worksheet = workbook.add_worksheet("유통기한조회")
+        title = workbook.add_format({"bold": True, "font_size": 16, "font_color": "#FFFFFF", "bg_color": "#147D73", "align": "center", "valign": "vcenter"})
+        info = workbook.add_format({"bg_color": "#F1F5F9", "font_color": "#334155", "valign": "vcenter"})
+        header = workbook.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#111827", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+        body = workbook.add_format({"border": 1, "valign": "top", "text_wrap": True})
+        center = workbook.add_format({"border": 1, "align": "center", "valign": "top", "text_wrap": True})
+        expired = workbook.add_format({"border": 1, "align": "center", "valign": "top", "bg_color": "#FFF2CC", "font_color": "#C65911"})
+        worksheet.merge_range(0, 0, 0, 8, "유통기한 조회 결과", title)
+        worksheet.merge_range(1, 0, 1, 8, summary, info)
+        worksheet.write_row(2, 0, headers, header)
+        for i, item in enumerate(items, start=3):
+            row = data_row(item)
+            for j, value in enumerate(row):
+                fmt = expired if j == 5 and isinstance(value, (int, float)) and not isinstance(value, bool) and value < 0 else (center if j in (0, 1, 2, 5, 6, 7, 8) else body)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    worksheet.write_number(i, j, value, fmt)
+                else:
+                    worksheet.write_string(i, j, str(value) if value is not None else "", fmt)
+            content_length = max(len(str(row[3])), len(str(row[4])))
+            worksheet.set_row(i, min(90, max(25, 18 * ((content_length // 35) + 1))))
+        for j, w in enumerate(widths):
+            worksheet.set_column(j, j, w)
+        worksheet.set_row(0, 32)
+        worksheet.set_row(1, 25)
+        worksheet.set_row(2, 30)
+        worksheet.freeze_panes(3, 0)
+        worksheet.autofilter(2, 0, len(items) + 2, 8)
+        worksheet.set_landscape()
+        worksheet.set_paper(9)
+        worksheet.fit_to_pages(1, 0)
+        worksheet.hide_gridlines(2)
+        workbook.close()
+        output.seek(0)
+        return output
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError as exc:
+        raise RuntimeError(
+            "배포 서버에 엑셀 생성 라이브러리가 없습니다. GitHub의 requirements.txt에 "
+            "XlsxWriter>=3.1.0을 추가해 주세요. 그전에는 화면의 '엑셀 호환 CSV' 버튼을 사용하면 됩니다."
+        ) from exc
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "유통기한조회"
+    ws.merge_cells("A1:I1")
+    ws["A1"] = "유통기한 조회 결과"
+    ws.merge_cells("A2:I2")
+    ws["A2"] = summary
+    ws.append(headers)
+    for item in items:
+        ws.append(data_row(item))
+    ws["A1"].fill = PatternFill("solid", fgColor="147D73")
+    ws["A1"].font = Font(name="맑은 고딕", size=16, bold=True, color="FFFFFF")
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws["A2"].fill = PatternFill("solid", fgColor="F1F5F9")
+    ws["A2"].font = Font(name="맑은 고딕", color="334155")
+    edge = Side(style="thin", color="CBD5E1")
+    for cell_obj in ws[3]:
+        cell_obj.fill = PatternFill("solid", fgColor="111827")
+        cell_obj.font = Font(name="맑은 고딕", bold=True, color="FFFFFF")
+        cell_obj.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell_obj.border = Border(left=edge, right=edge, top=edge, bottom=edge)
+    for row in ws.iter_rows(min_row=4):
+        for c in row:
+            c.alignment = Alignment(vertical="top", wrap_text=True)
+            c.border = Border(left=edge, right=edge, top=edge, bottom=edge)
+        if isinstance(row[5].value, (int, float)) and row[5].value < 0:
+            row[5].fill = PatternFill("solid", fgColor="FFF2CC")
+            row[5].font = Font(name="맑은 고딕", color="C65911")
+        ws.row_dimensions[row[0].row].height = 28
+    for j, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(j)].width = w
+    ws.row_dimensions[1].height = 32
+    ws.row_dimensions[2].height = 25
+    ws.row_dimensions[3].height = 30
+    ws.freeze_panes = "A4"
+    ws.auto_filter.ref = f"A3:I{len(items)+3}"
+    ws.sheet_view.showGridLines = False
+    ws.sheet_view.tabSelected = True
+    wb.active = 0
+    wb.save(output)
     output.seek(0)
     return output
 
@@ -1428,7 +1424,7 @@ def download_expiry_excel():
                              mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Export-Row-Count"] = str(len(items))
-        response.headers["X-Export-Version"] = "snapshot-v2"
+        response.headers["X-Export-Version"] = "xlsx-library-v3"
         return response
     except Exception as e:
         app.logger.exception("유통기한 조회 엑셀 다운로드 실패")
