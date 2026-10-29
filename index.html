@@ -148,7 +148,7 @@ button,input,select{font:inherit}button{cursor:pointer}
       <div id="smartHint" class="smartHint hidden">오타·띄어쓰기·비슷한 표현까지 찾아 점수순으로 보여줍니다. 외부 AI API를 호출하지 않아 검색 비용이 들지 않습니다.</div>
       <div class="actionRow">
         <button class="detailSearchBtn" id="detailToggleBtn" onclick="toggleDetail()">세부검색 펼치기</button>
-        <button class="downloadBtn" onclick="downloadExcel()">가격 인하 요청서 엑셀 다운로드</button>
+        <button class="downloadBtn" onclick="downloadExcel()">가격 인하 요청서 엑셀 다운로드 (v8)</button>
       </div>
       <div id="discountDoneStatus" class="discountDoneStatus">가격인하 완료 등록 0건 · 다음 요청서에서 자동 제외</div>
       <div id="detailArea" class="hidden">
@@ -876,14 +876,22 @@ async function downloadExcel(){
     });
 
     if(!response.ok){
-      let message="엑셀 다운로드에 실패했습니다.";
+      let message=`엑셀 다운로드 실패 (HTTP ${response.status})`;
       try{
         const data=await response.json();
-        message=data.message||message;
+        message=data.message?`${message}: ${data.message}`:message;
       }catch(e){}
       throw new Error(message);
     }
 
+    const serverVersion=response.headers.get("X-Price-Export-Fix")||"";
+    if(serverVersion!=="safe-ascii-headers-v8"){
+      throw new Error("다운로드 서버가 v8이 아닙니다. GitHub와 Render의 최신 배포를 확인해 주세요. 현재 서버: "+(serverVersion||"버전 정보 없음"));
+    }
+    const sheetCodes=(response.headers.get("X-Price-Export-Sheets")||"").split("|");
+    if(!sheetCodes.includes("donation")||!sheetCodes.includes("partner")){
+      throw new Error("서버에서 기증/상생 시트 정보를 확인할 수 없습니다.");
+    }
     const blob=await response.blob();
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
