@@ -3,9 +3,10 @@ import os
 import json
 import re
 import io
+import calendar
 from datetime import datetime, date
 from pathlib import Path
-from flask import Flask, jsonify, send_from_directory, send_file, request
+from flask import Flask, jsonify, send_from_directory, send_file, request, Response
 
 PRICE_SPREADSHEET_ID = "1l1qub-I2zuLKLDP2RJFGiDNTIBuGEAxI7PTxIDmfYi4"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
@@ -610,7 +611,27 @@ def sync_data():
 
 @app.route("/")
 def index():
-    return send_from_directory(".", "index.html")
+    # 기존 index.html은 유지하고 월별 유통기한 조회 바로가기만 추가한다.
+    index_path = Path(app.static_folder or ".") / "index.html"
+    if not index_path.exists():
+        return send_from_directory(".", "index.html")
+
+    html = index_path.read_text(encoding="utf-8-sig")
+    link = (
+        '<a href="/expiry_calendar" aria-label="월별 유통기한 조회" '
+        'style="position:fixed;right:18px;bottom:18px;z-index:9999;'
+        'padding:12px 18px;border-radius:999px;'
+        'background:#147d73;color:#fff;text-decoration:none;'
+        'font:600 14px system-ui,sans-serif;'
+        'box-shadow:0 4px 16px rgba(0,0,0,.2)">'
+        '📅 월별 유통기한 조회</a>'
+    )
+    if re.search(r"</body\s*>", html, flags=re.I):
+        html = re.sub(r"</body\s*>", lambda m: link + m.group(0), html,
+                      count=1, flags=re.I)
+    else:
+        html += link
+    return Response(html, mimetype="text/html")
 
 
 @app.route("/search_data.json")
@@ -1139,6 +1160,82 @@ def download_excel():
         )
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 500
+
+
+
+# 월별 유통기한 조회는 기존 가격검색·가격인하 다운로드와 독립적으로 작동한다.
+EXPIRY_CALENDAR_HTML = '<!doctype html>\n<html lang="ko"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>\n<title>월별 유통기한 조회 - 기빙플러스</title>\n<style>\n:root{font-family:system-ui,-apple-system,"Malgun Gothic",sans-serif;color:#1e293b;background:#f8fafc}\n*{box-sizing:border-box}body{margin:0}main{max-width:1180px;margin:0 auto;padding:30px 18px 64px}\na{color:#147d73;text-decoration:none}a:hover{text-decoration:underline}h1{margin:10px 0;font-size:27px}\n.sub{color:#64748b;margin:6px 0 24px}.panel{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.03)}\n.controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}.control{display:flex;flex-direction:column;gap:6px}\nlabel{font-size:13px;font-weight:700}input,select,button{font:inherit;min-height:42px;border:1px solid #cbd5e1;border-radius:8px;padding:8px 12px;background:white}\nbutton{background:#147d73;color:white;font-weight:700;border-color:#147d73;cursor:pointer}button:disabled{opacity:.55;cursor:default}\n.help{color:#64748b;font-size:13px;margin:14px 0 0}.summary{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.stat{background:white;border:1px solid #e2e8f0;border-radius:12px;padding:15px 20px;min-width:160px}\n.stat strong{display:block;font-size:25px;margin-top:4px}.stat small{color:#64748b}\n.table-wrap{overflow:auto;background:white;border:1px solid #e2e8f0;border-radius:14px}table{width:100%;border-collapse:collapse;min-width:900px;font-size:14px}\nth{text-align:left;background:#f1f5f9;white-space:nowrap;position:sticky;top:0}th,td{padding:12px 13px;border-bottom:1px solid #e2e8f0;vertical-align:top}td.product{min-width:210px;max-width:360px;white-space:pre-wrap}\n.empty{padding:48px 20px;text-align:center;color:#64748b}#status{margin:15px 0;color:#475569} .tag{display:inline-block;border-radius:20px;padding:3px 9px;background:#eef2f6;font-size:12px}\n@media(max-width:650px){h1{font-size:23px}main{padding:18px 12px}.panel{padding:15px}}\n</style></head>\n<body><main>\n<a href="/">← 가격검색으로 돌아가기</a>\n<h1>📅 월별 유통기한 조회</h1>\n<p class="sub">가격리스트에 유통기한이 등록된 상품을 원하는 날짜 기준으로 모아 볼 수 있습니다.</p>\n<div class="panel">\n<form id="form" class="controls">\n <div class="control"><label for="target">기준 날짜</label><input id="target" type="date" required value="__DEFAULT_DATE__"/></div>\n <div class="control"><label for="mode">조회 범위</label><select id="mode">\n  <option value="month">선택한 달 전체 (1일~말일)</option>\n  <option value="until">오늘부터 선택 날짜까지</option>\n  <option value="day">선택 날짜 당일만</option>\n </select></div>\n <button type="submit" id="searchBtn">상품 조회</button>\n</form>\n<p class="help" id="modeHelp">예: 12월 31일을 선택하면 12월 1~31일에 유통기한이 도래하는 상품을 표시합니다.</p>\n</div>\n<div id="status" role="status">상품을 조회하는 중입니다.</div>\n<div class="summary"><div class="stat"><small>조회된 상품 행</small><strong id="total">-</strong></div>\n<div class="stat"><small>기증</small><strong id="donated">-</strong></div>\n<div class="stat"><small>상생</small><strong id="partner">-</strong></div></div>\n<div class="table-wrap"><table><thead><tr><th>유통기한</th><th>형태</th><th>대분류</th><th>상품명</th><th>가격</th><th>남은 일수</th><th>입고일</th><th>매장</th><th>박스번호</th></tr></thead><tbody id="results"><tr><td colspan="9" class="empty">조회 중...</td></tr></tbody></table></div>\n<p class="help">가격리스트에 기한이 기록된 상품 기준입니다. 실제 매장 재고·판매 여부는 별도 확인이 필요하며, 같은 상품이 여러 차례 등록된 경우 여러 행으로 표시될 수 있습니다.</p>\n</main>\n<script>\nconst form=document.getElementById(\'form\'), target=document.getElementById(\'target\'), mode=document.getElementById(\'mode\');\nconst help=document.getElementById(\'modeHelp\'), results=document.getElementById(\'results\'), status=document.getElementById(\'status\');\nconst HELP={month:\'예: 12월 31일 선택 → 12월 1~31일 만료 상품 전체\',until:\'예: 12월 31일 선택 → 오늘부터 12월 31일까지 만료 예정 상품\',day:\'예: 12월 31일 선택 → 12월 31일 당일 만료 상품만\'};\nmode.addEventListener(\'change\',()=>help.textContent=HELP[mode.value]);\nfunction td(value,klass){const cell=document.createElement(\'td\');cell.textContent=value===null||value===undefined?\'\':String(value);if(klass)cell.className=klass;return cell;}\nfunction none(message){results.replaceChildren();const tr=document.createElement(\'tr\');const cell=td(message,\'empty\');cell.colSpan=9;tr.append(cell);results.append(tr);}\nasync function search(){\n const btn=document.getElementById(\'searchBtn\');btn.disabled=true;status.textContent=\'조회 중입니다...\';none(\'상품을 불러오는 중입니다.\');\n try{\n  const params=new URLSearchParams({date:target.value,mode:mode.value});\n  const response=await fetch(\'/api/expiry_calendar?\'+params.toString(),{cache:\'no-store\'});\n  const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.message||\'조회에 실패했습니다.\');\n  const items=data.items||[];results.replaceChildren();\n  for(const item of items){\n   const tr=document.createElement(\'tr\');\n   const remaining=item.daysLeft;\n   const days=typeof remaining===\'number\'?(remaining<0?Math.abs(remaining)+\'일 지남\':remaining+\'일\'):\'-\';\n   const fields=[item.expiryDate,item.type,item.category,item.product,item.priceDisplay||item.priceRaw,days,item.inboundDate,item.store,item.boxNo];\n   fields.forEach((v,i)=>tr.append(td(v,i===3?\'product\':\'\')));results.append(tr);\n  }\n  if(!items.length)none(\'선택한 기간에 해당하는 유통기한 상품이 없습니다.\');\n  document.getElementById(\'total\').textContent=items.length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'donated\').textContent=items.filter(i=>(i.type||\'\').includes(\'기증\')||(i.type||\'\').includes(\'기부\')).length.toLocaleString(\'ko-KR\');\n  document.getElementById(\'partner\').textContent=items.filter(i=>(i.type||\'\').includes(\'상생\')).length.toLocaleString(\'ko-KR\');\n  status.textContent=data.periodLabel+\' · \'+items.length.toLocaleString(\'ko-KR\')+\'행 · 가격리스트 동기화 \'+(data.updatedAt||\'확인 불가\');\n }catch(e){none(\'조회하지 못했습니다.\');status.textContent=\'오류: \'+e.message;}\n finally{btn.disabled=false;}\n}\nform.addEventListener(\'submit\',event=>{event.preventDefault();search();});\nsearch();\n</script></body></html>'
+
+
+def get_expiry_calendar_rows(target_date, mode):
+    if not Path(DATA_FILE).exists():
+        sync_data()
+    with open(DATA_FILE, "r", encoding="utf-8") as f:
+        source = json.load(f)
+    today = date.today()
+    start = target_date.replace(day=1)
+    if mode == "month":
+        end_day = calendar.monthrange(target_date.year, target_date.month)[1]
+        end = target_date.replace(day=end_day)
+        period_label = f"{start:%Y-%m-%d} ~ {end:%Y-%m-%d}"
+    elif mode == "until":
+        start, end = today, target_date
+        period_label = f"{start:%Y-%m-%d} ~ {end:%Y-%m-%d}"
+    else:
+        start = end = target_date
+        period_label = f"{target_date:%Y-%m-%d} 당일"
+
+    filtered = []
+    for item in source.get("items", []):
+        product = clean_text(item.get("product", ""))
+        if "전량소진" in product:
+            continue
+        expiry_text = clean_text(item.get("expiryDate", ""))
+        try:
+            expiry = date.fromisoformat(expiry_text)
+        except ValueError:
+            continue
+        if start <= expiry <= end and item.get("manage") == "유통기한관리":
+            filtered.append({
+                "type": item.get("type", ""),
+                "category": item.get("category", ""),
+                "product": product,
+                "priceDisplay": item.get("priceDisplay", ""),
+                "priceRaw": item.get("priceRaw", ""),
+                "inboundDate": item.get("inboundDate", ""),
+                "expiryDate": expiry_text,
+                "daysLeft": (expiry-today).days,
+                "store": item.get("store", ""),
+                "boxNo": item.get("boxNo", ""),
+            })
+    filtered.sort(key=lambda x: (x["expiryDate"], x["product"], x["type"]))
+    return filtered, source.get("updatedAt", ""), period_label
+
+
+@app.route("/expiry_calendar")
+def expiry_calendar():
+    today = date.today()
+    last = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    return Response(EXPIRY_CALENDAR_HTML.replace("__DEFAULT_DATE__", last.isoformat()),
+                    mimetype="text/html")
+
+
+@app.route("/api/expiry_calendar")
+def api_expiry_calendar():
+    date_text = clean_text(request.args.get("date", ""))
+    mode = clean_text(request.args.get("mode", "month"))
+    try:
+        target_date = date.fromisoformat(date_text)
+    except ValueError:
+        return jsonify({"ok": False, "message": "날짜를 YYYY-MM-DD 형식으로 입력해주세요."}), 400
+    if mode not in ("month", "until", "day"):
+        return jsonify({"ok": False, "message": "올바르지 않은 조회 범위입니다."}), 400
+    try:
+        items, updated_at, period_label = get_expiry_calendar_rows(target_date, mode)
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 500
+    return jsonify({"ok": True, "items": items, "count": len(items),
+                    "periodLabel": period_label, "updatedAt": updated_at})
 
 
 @app.route("/health")
